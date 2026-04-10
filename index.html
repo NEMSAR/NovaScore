@@ -518,6 +518,15 @@
                                         ))}
                                     </div>
                                     
+                                    <div className="flex justify-between items-center pt-2 border-t border-white/10">
+                                        <label className="text-gray-400 font-bold text-xs uppercase"><i className="fa-solid fa-stopwatch"></i> TIEMPO PARTIDO</label>
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-tv-numbers font-bold text-white">{formatTime(gameState.matchClock, true)}</span>
+                                            <button onClick={() => pushUpdate({isMatchClockRunning: !gameState.isMatchClockRunning})} className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${gameState.isMatchClockRunning ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>{gameState.isMatchClockRunning ? 'PAUSAR' : 'INICIAR'}</button>
+                                            <button onClick={() => { if(window.confirm('¿Reiniciar cronómetro del partido?')) pushUpdate({matchClock: 0, isMatchClockRunning: false}) }} className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors" title="Reiniciar Cronómetro"><i className="fa-solid fa-rotate-left"></i></button>
+                                        </div>
+                                    </div>
+
                                     <div className="pt-2 border-t border-white/10 space-y-2">
                                         <label className="text-gray-400 font-bold text-xs uppercase flex items-center justify-between gap-2">
                                             <span><i className="fa-solid fa-hourglass-half mr-1"></i> RELOJ PANTALLAS (CAL./DESC.)</span>
@@ -551,6 +560,7 @@
                                             <div className="flex items-center gap-2">
                                                 <span className="font-tv-numbers font-bold text-white text-sm">{formatTime(gameState.matchClock, true)}</span>
                                                 <button onClick={() => pushUpdate({isMatchClockRunning: !gameState.isMatchClockRunning})} className={`px-3 py-1 rounded text-[10px] font-bold transition-colors ${gameState.isMatchClockRunning ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>{gameState.isMatchClockRunning ? 'PAUSAR' : 'INICIAR'}</button>
+                                                <button onClick={() => { if(window.confirm('¿Reiniciar cronómetro del partido?')) pushUpdate({matchClock: 0, isMatchClockRunning: false}) }} className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors" title="Reiniciar Cronómetro"><i className="fa-solid fa-rotate-left"></i></button>
                                             </div>
                                         </div>
                                     </div>
