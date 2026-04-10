@@ -107,7 +107,7 @@
             theme: 'pink',
             tournamentLogo: '', 
             tournamentPhase: 'Final', 
-            courtName: 'PISTA CENTRAL', // NUEVO CAMPO
+            courtName: 'PISTA CENTRAL',
             team1: { p1: 'JUGADOR 1', p2: 'JUGADOR 2', sets: [0, 0, 0], points: '0', tbPoints: 0 },
             team2: { p1: 'JUGADOR 3', p2: 'JUGADOR 4', sets: [0, 0, 0], points: '0', tbPoints: 0 },
             server: 1, currentSet: 0, isTieBreak: false, tvAlert: '',
@@ -173,13 +173,23 @@
             const [pinInput, setPinInput] = useState('');
             const [authError, setAuthError] = useState('');
             const [activePin, setActivePin] = useState(null);
+            
             const [gameState, setGameState] = useState(DEFAULT_GAME_STATE);
+            
+            // NUEVO: Referencia de Estado para evitar el "Bug del Reloj"
+            const gameStateRef = useRef(gameState);
+            
             const [globalSponsors, setGlobalSponsors] = useState([]);
             const [showControls, setShowControls] = useState(false);
             const [isPublicMode, setIsPublicMode] = useState(false);
             const [currentSponsorIdx, setCurrentSponsorIdx] = useState(0);
             const [currentLogoIdx, setCurrentLogoIdx] = useState(0);
             const [newTickerMsg, setNewTickerMsg] = useState('');
+
+            // Mantenemos la referencia de estado siempre actualizada
+            useEffect(() => {
+                gameStateRef.current = gameState;
+            }, [gameState]);
 
             useEffect(() => {
                 const block = (e) => { if(e.key === 'F12' || (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J')) || (e.ctrlKey && e.key === 'U')) e.preventDefault(); };
@@ -193,7 +203,7 @@
                 initAuth();
                 const unsubscribe = onAuthStateChanged(auth, (u) => {
                     setUser(u);
-                    const urlParams = new URLSearchParams(window.location.search);
+                    const urlParams = newSearchParams(window.location.search);
                     const urlPin = urlParams.get('pin');
                     if (urlParams.get('display') === 'true') setIsPublicMode(true);
                     if (urlPin && u) validateAndLoadTournament(urlPin);
@@ -231,19 +241,24 @@
                 return () => unsub();
             }, [user, authMode, activePin]);
 
+            // CORRECCIÓN DEL BUG DEL RELOJ: Ahora usa el gameStateRef para no sobreescribir el estado
             useEffect(() => {
                 let intervalId = null;
                 if (authMode === 'scoreboard' && !isPublicMode && activePin && (gameState.isTimerRunning || gameState.isMatchClockRunning)) {
                     intervalId = setInterval(() => {
+                        const currentState = gameStateRef.current; // Leer siempre el estado MÁS RECIENTE
                         let updates = {};
-                        if (gameState.isTimerRunning && gameState.timeLeft > 0) updates.timeLeft = gameState.timeLeft - 1;
-                        else if (gameState.isTimerRunning && gameState.timeLeft <= 0) updates.isTimerRunning = false;
-                        if (gameState.isMatchClockRunning) updates.matchClock = gameState.matchClock + 1;
+                        
+                        if (currentState.isTimerRunning && currentState.timeLeft > 0) updates.timeLeft = currentState.timeLeft - 1;
+                        else if (currentState.isTimerRunning && currentState.timeLeft <= 0) updates.isTimerRunning = false;
+                        
+                        if (currentState.isMatchClockRunning) updates.matchClock = currentState.matchClock + 1;
+                        
                         if (Object.keys(updates).length > 0) pushUpdate(updates);
                     }, 1000);
                 }
                 return () => clearInterval(intervalId);
-            }, [gameState.isTimerRunning, gameState.isMatchClockRunning, gameState.timeLeft, gameState.matchClock, authMode, isPublicMode, activePin]);
+            }, [gameState.isTimerRunning, gameState.isMatchClockRunning, authMode, isPublicMode, activePin]);
 
             useEffect(() => {
                 if (gameState.sponsors?.length > 0) {
@@ -259,21 +274,26 @@
                 }
             }, [gameState.activeView, globalSponsors.length]);
 
+            // Función maestra de actualización refactorizada
             const pushUpdate = async (updates) => {
                 if (!activePin || isPublicMode) return;
-                const tempState = { ...gameState, ...updates };
+                const currentState = gameStateRef.current; // Evita cierres de variables oxidadas
+                const tempState = { ...currentState, ...updates };
+                
                 if (updates.team1 || updates.team2 || updates.isTieBreak || updates.currentSet) {
                     const autoAlert = calculateAutoAlert(tempState);
                     tempState.tvAlert = autoAlert; 
                 }
+                
                 setGameState(tempState);
                 try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', activePin), { gameState: tempState }); } catch (e) { }
             };
 
             const handlePoints = (teamNum, direction) => {
+                const currentState = gameStateRef.current;
                 const teamKey = teamNum === 1 ? 'team1' : 'team2';
-                const team = gameState[teamKey];
-                if (gameState.isTieBreak) {
+                const team = currentState[teamKey];
+                if (currentState.isTieBreak) {
                     let newTb = team.tbPoints;
                     if (direction === 'up') newTb++;
                     if (direction === 'down' && newTb > 0) newTb--;
@@ -288,41 +308,45 @@
             };
 
             const updateGames = (teamNum, direction) => {
+                const currentState = gameStateRef.current;
                 const teamKey = teamNum === 1 ? 'team1' : 'team2';
-                const team = gameState[teamKey];
+                const team = currentState[teamKey];
                 let newSets = [...team.sets];
-                if (direction === 'up' && newSets[gameState.currentSet] < 7) newSets[gameState.currentSet]++;
-                if (direction === 'down' && newSets[gameState.currentSet] > 0) newSets[gameState.currentSet]--;
+                if (direction === 'up' && newSets[currentState.currentSet] < 7) newSets[currentState.currentSet]++;
+                if (direction === 'down' && newSets[currentState.currentSet] > 0) newSets[currentState.currentSet]--;
                 pushUpdate({ [teamKey]: { ...team, sets: newSets } });
             };
 
             const addTickerMessage = () => {
+                const currentState = gameStateRef.current;
                 if(!newTickerMsg.trim()) return;
-                pushUpdate({ sponsors: [...(gameState.sponsors || []), newTickerMsg.trim()] });
+                pushUpdate({ sponsors: [...(currentState.sponsors || []), newTickerMsg.trim()] });
                 setNewTickerMsg('');
             };
 
             const removeTickerMessage = (idx) => {
-                const updated = [...(gameState.sponsors || [])];
+                const currentState = gameStateRef.current;
+                const updated = [...(currentState.sponsors || [])];
                 updated.splice(idx, 1);
                 pushUpdate({ sponsors: updated });
             };
 
             const saveMatchAndReset = () => {
+                const currentState = gameStateRef.current;
                 if (!window.confirm('¿Seguro que deseas GUARDAR ESTE PARTIDO y reiniciar el marcador a cero?')) return;
                 const newMatch = {
                     id: Date.now(),
                     date: new Date().toLocaleDateString(),
-                    phase: gameState.tournamentPhase,
-                    category: gameState.category,
-                    team1: { p1: gameState.team1.p1, p2: gameState.team1.p2, sets: [...gameState.team1.sets] },
-                    team2: { p1: gameState.team2.p1, p2: gameState.team2.p2, sets: [...gameState.team2.sets] }
+                    phase: currentState.tournamentPhase,
+                    category: currentState.category,
+                    team1: { p1: currentState.team1.p1, p2: currentState.team1.p2, sets: [...currentState.team1.sets] },
+                    team2: { p1: currentState.team2.p1, p2: currentState.team2.p2, sets: [...currentState.team2.sets] }
                 };
-                const updatedHistory = [newMatch, ...(gameState.matchHistory || [])];
+                const updatedHistory = [newMatch, ...(currentState.matchHistory || [])];
                 pushUpdate({
                     matchHistory: updatedHistory,
-                    team1: { ...gameState.team1, sets: [0,0,0], points: '0', tbPoints: 0 },
-                    team2: { ...gameState.team2, sets: [0,0,0], points: '0', tbPoints: 0 },
+                    team1: { ...currentState.team1, sets: [0,0,0], points: '0', tbPoints: 0 },
+                    team2: { ...currentState.team2, sets: [0,0,0], points: '0', tbPoints: 0 },
                     currentSet: 0,
                     isTieBreak: false,
                     tvAlert: '',
