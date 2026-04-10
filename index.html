@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NovaScore - Padel Scoreboard</title>
+    <title>NovaBit - Padel Scoreboard</title>
     
     <!-- Favicon -->
     <link rel="icon" href="https://i.imgur.com/FnYqHyv.png">
@@ -32,6 +32,16 @@
             from { transform: translateX(50px); opacity: 0; } 
             to { transform: translateX(0); opacity: 1; } 
         }
+
+        /* Animación hiper premium para TOURNAMENT POINT */
+        @keyframes tournamentPointPulse {
+            0% { transform: scale(1); filter: drop-shadow(0 0 15px rgba(251,191,36,0.6)); }
+            50% { transform: scale(1.05); filter: drop-shadow(0 0 40px rgba(251,191,36,1)); }
+            100% { transform: scale(1); filter: drop-shadow(0 0 15px rgba(251,191,36,0.6)); }
+        }
+        .animate-tournament-point {
+            animation: tournamentPointPulse 2s ease-in-out infinite;
+        }
         
         body { margin: 0; overflow: hidden; background-color: #0a0a0c; }
     </style>
@@ -40,12 +50,12 @@
     <!-- Contenedor donde React inyectará la aplicación -->
     <div id="root"></div>
 
-    <!-- Script de la aplicación (type="text/babel" es CRUCIAL aquí) -->
+    <!-- Script de la aplicación -->
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
         const POINTS = ['0', '15', '30', '40', 'Ad'];
-        const SECRET_PIN = '181293'; // <-- CAMBIA ESTO POR TU CONTRASEÑA REAL
+        const SECRET_PIN = '181293'; 
 
         const THEMES = {
             pink: { 
@@ -65,12 +75,16 @@
             }
         };
 
+        const TOURNAMENT_PHASES = [
+            "Fase de Grupos", "Dieciseisavos", "Octavos", "Cuartos", "Semifinales", "Final"
+        ];
+
         const BackgroundFX = ({ activeView, themeKey }) => {
             const theme = THEMES[themeKey] || THEMES.pink;
             return (
                 <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
                     <div className={`absolute top-[-20%] left-[-10%] w-[60vw] h-[60vw] rounded-full mix-blend-screen filter blur-[120px] opacity-40 animate-pulse transition-colors duration-1000 ${activeView === 'halftime' ? 'bg-indigo-900' : theme.bg1}`}></div>
-                    <div className={`absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full mix-blend-screen filter blur-[100px] opacity-40 transition-colors duration-1000 ${activeView === 'halftime' ? 'bg-blue-900' : theme.bg2}`}></div>
+                    <div className={`absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full mix-blend-screen filter blur-[100px] opacity-40 transition-colors duration-1000 ${activeView === 'halftime' ? 'bg-cyan-900' : theme.bg2}`}></div>
                     <div className="absolute top-[40%] left-[40%] w-[30vw] h-[30vw] bg-purple-600 rounded-full mix-blend-screen filter blur-[150px] opacity-10"></div>
                     <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '30px 30px' }}></div>
                 </div>
@@ -87,20 +101,25 @@
             
             const [isPublicMode, setIsPublicMode] = useState(false);
             const [showControls, setShowControls] = useState(false);
+            
+            // Índices visuales locales (no se sincronizan por socket para no saturar)
             const [currentSponsorIdx, setCurrentSponsorIdx] = useState(0);
+            const [currentLogoIdx, setCurrentLogoIdx] = useState(0);
 
             // --- ESTADO GLOBAL (Sincronizado) ---
             const [gameState, setGameState] = useState({
                 activeView: 'scoreboard',
                 category: 'MASCULINO',
                 theme: 'pink',
+                tournamentLogo: '', 
+                tournamentPhase: 'Final', 
                 team1: { p1: 'A. TAPIA', p2: 'A. COELLO', sets: [0, 0, 0], points: '0', tbPoints: 0 },
                 team2: { p1: 'F. CHINGOTTO', p2: 'A. GALÁN', sets: [0, 0, 0], points: '0', tbPoints: 0 },
                 server: 1,
                 currentSet: 0,
                 isTieBreak: false,
                 tvAlert: '',
-                timeLeft: 300, 
+                timeLeft: 300, // 5 min
                 isTimerRunning: false,
                 matchClock: 0,
                 isMatchClockRunning: false,
@@ -108,10 +127,23 @@
                     "TORNEO PATROCINADO POR: RED BULL",
                     "PALA OFICIAL: NOX PADEL",
                     "VISITA NUESTRO BAR PARA BEBIDAS FRÍAS"
-                ]
+                ],
+                sponsorLogos: [] // URLs de imágenes para pantalla completa
             });
 
-            // PROTECCIÓN ANTI-INSPECCIÓN (F12, Click derecho)
+            // CONFIGURACIÓN DEL FAVICON Y TÍTULO DE LA PÁGINA
+            useEffect(() => {
+                document.title = "NovaBit - Padel Scoreboard";
+                let link = document.querySelector("link[rel~='icon']");
+                if (!link) {
+                    link = document.createElement('link');
+                    link.rel = 'icon';
+                    document.head.appendChild(link);
+                }
+                link.href = 'https://i.imgur.com/FnYqHyv.png';
+            }, []);
+
+            // PROTECCIÓN ANTI-INSPECCIÓN
             useEffect(() => {
                 const handleContextMenu = (e) => e.preventDefault();
                 const handleKeyDown = (e) => {
@@ -165,7 +197,7 @@
                 });
             };
 
-            // Temporizadores
+            // Temporizadores de partido y pantallas
             useEffect(() => {
                 let warmupInterval = null;
                 let matchInterval = null;
@@ -190,12 +222,22 @@
                 };
             }, [gameState.isTimerRunning, gameState.isMatchClockRunning]);
 
-            // Sponsors
+            // Rotación Ticker Sponsors (Texto)
             useEffect(() => {
-                if (gameState.sponsors.length === 0) return;
+                if (!gameState.sponsors || gameState.sponsors.length === 0) return;
                 const interval = setInterval(() => setCurrentSponsorIdx((prev) => (prev + 1) % gameState.sponsors.length), 5000);
                 return () => clearInterval(interval);
-            }, [gameState.sponsors.length]);
+            }, [gameState.sponsors?.length]);
+
+            // Rotación Logos Sponsor (Pantalla Completa)
+            useEffect(() => {
+                if (gameState.activeView === 'sponsor_full' && gameState.sponsorLogos && gameState.sponsorLogos.length > 0) {
+                    const interval = setInterval(() => {
+                        setCurrentLogoIdx(prev => (prev + 1) % gameState.sponsorLogos.length);
+                    }, 4000); // Cambia cada 4 segundos
+                    return () => clearInterval(interval);
+                }
+            }, [gameState.activeView, gameState.sponsorLogos]);
 
             // --- HANDLERS MARCADOR ---
             const handlePoints = (teamNum, direction) => {
@@ -238,6 +280,22 @@
                 window.open(url, 'PantallaPadel', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no');
             };
 
+            // Configuración visual de las Alertas TV
+            const getAlertConfig = (alertType) => {
+                switch(alertType) {
+                    case 'PUNTO DE ORO':
+                        return { bg: 'from-transparent via-yellow-600/80 to-transparent', border: 'border-yellow-400', text: 'text-yellow-400 animate-pulse drop-shadow-[0_0_10px_rgba(250,204,21,0.8)]' };
+                    case 'SET POINT':
+                        return { bg: 'from-transparent via-orange-600/80 to-transparent', border: 'border-orange-500', text: 'text-orange-400 animate-pulse drop-shadow-[0_0_10px_rgba(249,115,22,0.8)]' };
+                    case 'MATCH POINT':
+                        return { bg: 'from-transparent via-red-600/80 to-transparent', border: 'border-red-500', text: 'text-red-400 animate-pulse drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]' };
+                    case 'TOURNAMENT POINT':
+                        return { bg: 'from-transparent via-amber-600/90 to-transparent', border: 'border-amber-300 shadow-[0_0_30px_rgba(251,191,36,0.6)]', text: 'bg-clip-text text-transparent bg-gradient-to-r from-yellow-200 via-amber-400 to-yellow-200 animate-tournament-point text-3xl' };
+                    default:
+                        return { bg: 'from-transparent via-gray-600/80 to-transparent', border: 'border-gray-500', text: 'text-white' };
+                }
+            };
+
             const activeTheme = THEMES[gameState.theme];
 
             // --- PANTALLA DE BLOQUEO ---
@@ -273,9 +331,8 @@
                             </form>
                         </div>
                         
-                        {/* BRANDING NOVABIT - PANTALLA DE BLOQUEO */}
                         <div className="absolute bottom-8 flex flex-col items-center opacity-50 hover:opacity-100 transition-opacity">
-                            <img src="https://i.imgur.com/pnRQVcv.png" alt="NovaBit Media Agency" className="h-10 mb-2 object-contain" />
+                            <img src="https://i.imgur.com/FnYqHyv.png" alt="NovaBit Media Agency" className="h-10 mb-2 object-contain" />
                             <span className="text-[9px] text-gray-400 font-bold tracking-[0.2em] uppercase">Powered by NovaBit Media Agency</span>
                             <span className="text-[7px] text-gray-500 tracking-[0.2em] uppercase mt-1">Todos los derechos reservados</span>
                         </div>
@@ -297,22 +354,64 @@
 
                     <div className="flex-1 overflow-y-auto p-5 space-y-6 text-sm custom-scrollbar">
                         
-                        {/* Multipantalla & Tema */}
-                        <div className="grid grid-cols-2 gap-2">
-                            <button onClick={openPublicScreen} className="py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold flex flex-col items-center justify-center gap-1 transition-colors shadow-lg shadow-indigo-500/20 text-xs">
-                                <i className="fa-solid fa-arrow-up-right-from-square text-[16px]"></i> ABRIR PANTALLA 2
+                        {/* Ajustes Generales */}
+                        <div className="bg-gradient-to-br from-white/5 to-transparent border border-white/10 rounded-lg p-4 space-y-4">
+                            <button onClick={openPublicScreen} className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold flex items-center justify-center gap-2 transition-colors shadow-lg shadow-indigo-500/20 text-xs">
+                                <i className="fa-solid fa-arrow-up-right-from-square text-[14px]"></i> ABRIR PANTALLA 2 (TV)
                             </button>
-                            <div className="bg-white/5 border border-white/10 rounded p-2 flex flex-col justify-center">
-                                 <label className="text-gray-400 font-bold text-[10px] uppercase mb-1 flex items-center gap-1">
-                                    <i className="fa-solid fa-palette text-[12px]"></i> TEMA VISUAL
-                                 </label>
-                                 <select 
-                                     value={gameState.theme} 
-                                     onChange={e => updateGame({theme: e.target.value})}
-                                     className="bg-black/50 border border-white/20 text-white text-xs rounded p-1 w-full focus:outline-none focus:border-white"
-                                 >
-                                     {Object.entries(THEMES).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}
-                                 </select>
+                            
+                            <div className="grid grid-cols-3 gap-2">
+                                <div className="space-y-1">
+                                    <label className="text-gray-400 font-bold text-[9px] uppercase flex items-center gap-1">
+                                        <i className="fa-solid fa-venus-mars text-[10px]"></i> CATEGORÍA
+                                    </label>
+                                    <select 
+                                        value={gameState.category} 
+                                        onChange={e => updateGame({category: e.target.value})}
+                                        className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full focus:outline-none focus:border-white"
+                                    >
+                                        <option value="MASCULINO">MASCULINO</option>
+                                        <option value="FEMENINO">FEMENINO</option>
+                                        <option value="MIXTO">MIXTO</option>
+                                    </select>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-gray-400 font-bold text-[9px] uppercase flex items-center gap-1">
+                                        <i className="fa-solid fa-palette text-[10px]"></i> TEMA
+                                    </label>
+                                    <select 
+                                        value={gameState.theme} 
+                                        onChange={e => updateGame({theme: e.target.value})}
+                                        className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full focus:outline-none focus:border-white"
+                                    >
+                                        {Object.entries(THEMES).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}
+                                    </select>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-gray-400 font-bold text-[9px] uppercase flex items-center gap-1">
+                                        <i className="fa-solid fa-sitemap text-[10px]"></i> FASE
+                                    </label>
+                                    <select 
+                                        value={gameState.tournamentPhase} 
+                                        onChange={e => updateGame({tournamentPhase: e.target.value})}
+                                        className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full focus:outline-none focus:border-white"
+                                    >
+                                        {TOURNAMENT_PHASES.map(fase => <option key={fase} value={fase}>{fase}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div className="space-y-1 border-t border-white/10 pt-3">
+                                <label className="text-gray-400 font-bold text-[10px] uppercase flex items-center gap-1">
+                                    <i className="fa-regular fa-image text-[12px]"></i> LOGO DEL TORNEO (OPCIONAL)
+                                </label>
+                                <input 
+                                    type="text" 
+                                    value={gameState.tournamentLogo} 
+                                    onChange={e => updateGame({tournamentLogo: e.target.value})} 
+                                    placeholder="URL de la imagen (ej. https://...)" 
+                                    className="w-full bg-black/50 border border-white/20 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:border-white"
+                                />
                             </div>
                         </div>
 
@@ -322,7 +421,7 @@
                             <div className="grid grid-cols-4 gap-2">
                                 {[
                                     { id: 'scoreboard', icon: 'fa-desktop', label: 'MARCADOR' },
-                                    { id: 'warmup', icon: 'fa-clock', label: 'CALENTAR' },
+                                    { id: 'warmup', icon: 'fa-fire', label: 'CALENTAR' },
                                     { id: 'halftime', icon: 'fa-mug-hot', label: 'DESCANSO' },
                                     { id: 'sponsor_full', icon: 'fa-bolt', label: 'SPONSOR' }
                                 ].map(view => (
@@ -337,7 +436,7 @@
                             </div>
                         </div>
 
-                        {/* ALERTS Y RELOJ DE PARTIDO */}
+                        {/* ALERTS Y RELOJES */}
                         <div className="bg-black/40 p-3 rounded-lg border border-white/5 space-y-3">
                             <div className="flex items-center justify-between border-b border-white/10 pb-2">
                                  <label className="text-gray-400 font-bold tracking-wider text-xs uppercase flex items-center gap-2">
@@ -345,14 +444,23 @@
                                  </label>
                                  <button onClick={() => updateGame({tvAlert: ''})} className="text-[10px] bg-red-500/20 text-red-400 px-2 py-1 rounded hover:bg-red-500/40">LIMPIAR</button>
                             </div>
-                            <div className="flex gap-2">
-                                {['PUNTO DE ORO', 'MATCH POINT', 'SET POINT'].map(alert => (
-                                    <button key={alert} onClick={() => updateGame({tvAlert: alert})} className={`flex-1 py-1.5 text-[10px] font-bold rounded border ${gameState.tvAlert === alert ? 'bg-yellow-500 text-black border-yellow-500' : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700'}`}>
+                            <div className="grid grid-cols-2 gap-2">
+                                {['PUNTO DE ORO', 'SET POINT', 'MATCH POINT', 'TOURNAMENT POINT'].map(alert => (
+                                    <button 
+                                        key={alert} 
+                                        onClick={() => updateGame({tvAlert: alert})} 
+                                        className={`py-2 text-[10px] font-bold rounded border ${
+                                            gameState.tvAlert === alert 
+                                            ? alert === 'TOURNAMENT POINT' ? 'bg-amber-600 text-white border-amber-400' : 'bg-white text-black border-white' 
+                                            : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700'
+                                        }`}
+                                    >
                                         {alert}
                                     </button>
                                 ))}
                             </div>
                             
+                            {/* RELOJ PARTIDO */}
                             <div className="flex items-center justify-between pt-2 border-t border-white/10">
                                  <label className="text-gray-400 font-bold tracking-wider text-xs uppercase flex items-center gap-2">
                                     <i className="fa-solid fa-stopwatch text-[14px]"></i> TIEMPO PARTIDO
@@ -363,6 +471,25 @@
                                          {gameState.isMatchClockRunning ? 'PAUSAR' : 'INICIAR'}
                                      </button>
                                  </div>
+                            </div>
+
+                            {/* RELOJ PANTALLAS (CALENTAMIENTO/DESCANSO) */}
+                            <div className="pt-2 border-t border-white/10 space-y-2">
+                                <label className="text-gray-400 font-bold tracking-wider text-xs uppercase flex items-center justify-between gap-2">
+                                    <span><i className="fa-solid fa-hourglass-half text-[14px] mr-1"></i> RELOJ PANTALLAS (CAL./DESC.)</span>
+                                </label>
+                                <div className="grid grid-cols-4 gap-1">
+                                    <button onClick={() => updateGame({timeLeft: Math.max(0, gameState.timeLeft - 60)})} className="py-1 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold transition-colors">-1 MIN</button>
+                                    <button onClick={() => updateGame({timeLeft: gameState.timeLeft + 60})} className="py-1 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold transition-colors">+1 MIN</button>
+                                    <button onClick={() => updateGame({timeLeft: 300, isTimerRunning: false})} className="py-1 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold transition-colors border border-white/10">5 MIN</button>
+                                    <button onClick={() => updateGame({timeLeft: 600, isTimerRunning: false})} className="py-1 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold transition-colors border border-white/10">10 MIN</button>
+                                </div>
+                                <div className="flex items-center justify-between bg-black/50 p-2 rounded">
+                                    <span className="font-mono font-bold text-xl text-white ml-2">{formatTime(gameState.timeLeft)}</span>
+                                    <button onClick={() => updateGame({isTimerRunning: !gameState.isTimerRunning})} className={`px-4 py-1.5 rounded text-xs font-bold ${gameState.isTimerRunning ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>
+                                        {gameState.isTimerRunning ? 'PAUSAR' : 'INICIAR'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -418,9 +545,39 @@
                             </div>
                         </div>
 
+                        {/* SPONSORS FULL SCREEN MANAGER */}
+                        <div className="bg-gradient-to-br from-white/5 to-transparent border border-white/10 rounded-lg p-4 space-y-3">
+                            <label className="text-gray-400 font-bold text-[10px] uppercase flex items-center gap-1 border-b border-white/10 pb-2">
+                                <i className="fa-solid fa-images text-[12px]"></i> LOGOS SPONSORS (PANTALLA COMPLETA)
+                            </label>
+                            <div className="flex gap-2">
+                                <input id="newSponsorLogo" type="text" placeholder="URL del logo (.png, .jpg)" className="flex-1 bg-black/50 border border-white/20 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:border-white" />
+                                <button onClick={() => {
+                                    const input = document.getElementById('newSponsorLogo');
+                                    if(input.value) {
+                                        updateGame({ sponsorLogos: [...(gameState.sponsorLogos || []), input.value] });
+                                        input.value = '';
+                                    }
+                                }} className="bg-white/10 px-3 py-1.5 rounded text-xs hover:bg-white/20 transition-colors"><i className="fa-solid fa-plus"></i></button>
+                            </div>
+                            <div className="space-y-1 max-h-32 overflow-y-auto custom-scrollbar pr-1">
+                                {(gameState.sponsorLogos || []).length === 0 && <p className="text-[10px] text-gray-500 italic">No hay logos cargados.</p>}
+                                {(gameState.sponsorLogos || []).map((logo, idx) => (
+                                    <div key={idx} className="flex items-center justify-between bg-black/40 px-2 py-1.5 rounded text-[10px] border border-white/5">
+                                        <span className="truncate max-w-[160px] text-gray-300">{logo}</span>
+                                        <button onClick={() => {
+                                            const newLogos = [...gameState.sponsorLogos];
+                                            newLogos.splice(idx, 1);
+                                            updateGame({ sponsorLogos: newLogos });
+                                        }} className="text-red-400 hover:text-red-300 px-2 py-1"><i className="fa-solid fa-trash"></i></button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
                         {/* BRANDING NOVABIT - PANEL DE CONTROL */}
                         <div className="mt-8 pt-6 border-t border-white/5 flex flex-col items-center justify-center opacity-60">
-                            <img src="https://i.imgur.com/pnRQVcv.png" alt="NovaBit" className="h-8 mb-2 object-contain" />
+                            <img src="https://i.imgur.com/FnYqHyv.png" alt="NovaBit" className="h-8 mb-2 object-contain" />
                             <span className="text-[8px] text-gray-400 font-bold tracking-[0.2em] uppercase text-center">Powered by NovaBit Media Agency</span>
                             <span className="text-[6px] text-gray-500 tracking-widest uppercase mt-1">Todos los Derechos Reservados</span>
                         </div>
@@ -440,20 +597,26 @@
 
                     {!isPublicMode && renderControlPanel()}
 
-                    {/* CONTENEDOR PRINCIPAL */}
+                    {/* CONTENEDOR PRINCIPAL PANTALLAS */}
                     <div className="relative w-full h-screen flex flex-col justify-center items-center z-10 px-8 pb-14">
                         
                         {/* --- VISTA: MARCADOR --- */}
-                        <div className={`w-full max-w-6xl transition-all duration-700 absolute flex flex-col justify-center ${gameState.activeView === 'scoreboard' ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}>
+                        <div className={`w-full max-w-6xl transition-all duration-700 absolute flex flex-col justify-center ${gameState.activeView === 'scoreboard' ? 'opacity-100 scale-100 z-10' : 'opacity-0 scale-95 pointer-events-none z-0'}`}>
                             
                             {/* HEADER PREMIUM */}
                             <div className="mb-6 flex justify-between items-end border-b border-white/20 pb-4 relative">
-                                <div>
-                                    <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase mb-1 flex items-center gap-3">
+                                <div className="flex items-center gap-4">
+                                    {gameState.tournamentLogo ? (
+                                        <img src={gameState.tournamentLogo} alt="Logo Torneo" className="h-16 w-16 object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]" />
+                                    ) : (
                                         <i className={`fa-solid fa-trophy text-[40px] ${activeTheme.text}`}></i>
-                                        <span className={`bg-clip-text text-transparent bg-gradient-to-r ${activeTheme.gradient}`}>{activeTheme.name.split(' ')[0]}</span>
-                                    </h1>
-                                    <p className="text-gray-400 tracking-[0.3em] font-bold text-sm">PISTA CENTRAL <span className="mx-2">•</span> OFICIAL</p>
+                                    )}
+                                    <div>
+                                        <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase mb-1">
+                                            <span className={`bg-clip-text text-transparent bg-gradient-to-r ${activeTheme.gradient}`}>{activeTheme.name.split(' ')[0]}</span>
+                                        </h1>
+                                        <p className="text-gray-400 tracking-[0.3em] font-bold text-sm uppercase">PISTA CENTRAL <span className="mx-2">•</span> {gameState.tournamentPhase}</p>
+                                    </div>
                                 </div>
                                 
                                 {/* Reloj de Partido */}
@@ -464,7 +627,7 @@
                                     </div>
                                 </div>
 
-                                <div className="text-right">
+                                <div className="text-right flex flex-col items-end gap-2">
                                     <div className={`inline-block border border-white/20 px-6 py-2 bg-white/5 backdrop-blur-md font-bold tracking-widest text-sm ${activeTheme.text} ${activeTheme.shadow}`}>
                                         {gameState.category}
                                     </div>
@@ -472,9 +635,9 @@
                             </div>
 
                             {/* ALERTA TV FLASH */}
-                            <div className={`w-full overflow-hidden transition-all duration-500 ease-out flex justify-center ${gameState.tvAlert ? 'max-h-20 mb-4 opacity-100' : 'max-h-0 opacity-0 mb-0'}`}>
-                                <div className="bg-gradient-to-r from-transparent via-red-600 to-transparent w-full text-center py-2 border-y border-red-400/50">
-                                    <span className="text-white font-black tracking-[0.5em] text-2xl uppercase animate-pulse drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]">
+                            <div className={`w-full overflow-hidden transition-all duration-500 ease-out flex justify-center ${gameState.tvAlert ? 'max-h-24 mb-4 opacity-100' : 'max-h-0 opacity-0 mb-0'}`}>
+                                <div className={`w-full text-center py-2 border-y ${getAlertConfig(gameState.tvAlert).border} bg-gradient-to-r ${getAlertConfig(gameState.tvAlert).bg}`}>
+                                    <span className={`font-black tracking-[0.5em] text-2xl uppercase ${getAlertConfig(gameState.tvAlert).text}`}>
                                         {gameState.tvAlert}
                                     </span>
                                 </div>
@@ -482,7 +645,6 @@
 
                             {/* TABLA DE RESULTADOS ESTILO TV */}
                             <div className="border border-white/10 bg-black/50 backdrop-blur-2xl rounded-xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
-                                
                                 {/* Cabecera Columnas */}
                                 <div className="grid grid-cols-[1fr_auto_auto_auto_130px] gap-1 border-b border-white/10 bg-black/60 text-gray-500 text-xs font-bold tracking-[0.2em] p-2 pr-4 text-center items-center">
                                     <div className="text-left pl-14">JUGADORES</div>
@@ -500,8 +662,6 @@
                                     const otherTeam = num === 1 ? gameState.team2 : gameState.team1;
                                     return (
                                         <div key={`row-${num}`} className={`grid grid-cols-[1fr_auto_auto_auto_130px] gap-1 items-stretch group ${num === 1 ? 'border-b border-white/5' : ''}`}>
-                                            
-                                            {/* Nombres Apilados (Estilo WPT/Premier) */}
                                             <div className="flex items-center px-4 py-4 gap-4 relative bg-gradient-to-r hover:from-white/5 to-transparent transition-colors">
                                                 <div className="w-6 flex justify-center items-center h-full">
                                                     {gameState.server === num && <div className="w-3 h-3 rounded-full bg-yellow-400 animate-pulse shadow-[0_0_15px_rgba(250,204,21,1)]"></div>}
@@ -512,14 +672,12 @@
                                                 </div>
                                             </div>
                                             
-                                            {/* Sets */}
                                             {[0, 1, 2].map(s => (
                                                 <div key={`t${num}-s${s}`} className={`flex items-center justify-center w-16 text-3xl font-bold border-l border-white/5 ${gameState.currentSet === s ? 'text-white bg-white/5' : 'text-gray-600'} ${team.sets[s] >= 6 && team.sets[s] > otherTeam.sets[s] ? 'text-white' : ''}`}>
                                                     {team.sets[s]}
                                                 </div>
                                             ))}
 
-                                            {/* Puntos de Juego */}
                                             <div className={`flex items-center justify-center text-6xl font-black tracking-tighter m-1 rounded-sm border-2 transition-all ${gameState.isTieBreak ? 'bg-red-600 border-red-400 text-white shadow-[0_0_20px_rgba(220,38,38,0.3)]' : 'bg-white border-transparent text-black'}`}>
                                                 {gameState.isTieBreak ? team.tbPoints : team.points}
                                             </div>
@@ -529,14 +687,51 @@
                             </div>
                         </div>
 
-                        {/* --- DEMÁS VISTAS (Calentamiento, Entretiempo, Sponsors) --- */}
-                        <div className={`w-full max-w-5xl transition-all duration-700 absolute flex flex-col items-center justify-center ${gameState.activeView === 'warmup' ? 'opacity-100 scale-100' : 'opacity-0 scale-105 pointer-events-none'}`}>
+                        {/* --- VISTA: CALENTAMIENTO --- */}
+                        <div className={`w-full max-w-5xl transition-all duration-700 absolute flex flex-col items-center justify-center ${gameState.activeView === 'warmup' ? 'opacity-100 scale-100 z-10' : 'opacity-0 scale-105 pointer-events-none z-0'}`}>
                             <div className={`mb-8 border-b-4 ${activeTheme.border} pb-2`}><h2 className="text-3xl md:text-4xl font-bold tracking-[0.3em] text-gray-400 uppercase">Tiempo de</h2></div>
                             <h1 className="text-7xl md:text-9xl font-black tracking-tighter uppercase bg-clip-text text-transparent bg-gradient-to-b from-white to-gray-500 mb-12 drop-shadow-2xl">Calentamiento</h1>
                             <div className="relative group">
                                 <div className={`absolute inset-0 ${activeTheme.bg1} blur-2xl opacity-50 group-hover:opacity-70 transition-opacity`}></div>
                                 <div className="relative bg-black/80 border border-white/20 backdrop-blur-xl px-20 py-10 rounded-2xl flex items-center justify-center">
                                     <span className="text-8xl md:text-[12rem] font-mono font-black tracking-widest text-white leading-none">{formatTime(gameState.timeLeft)}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* --- VISTA: DESCANSO (ENTRETIEMPO) --- */}
+                        <div className={`w-full max-w-5xl transition-all duration-700 absolute flex flex-col items-center justify-center ${gameState.activeView === 'halftime' ? 'opacity-100 scale-100 z-10' : 'opacity-0 scale-105 pointer-events-none z-0'}`}>
+                            <div className={`mb-8 border-b-4 border-cyan-400 pb-2`}><h2 className="text-3xl md:text-4xl font-bold tracking-[0.3em] text-gray-400 uppercase">Tiempo de</h2></div>
+                            <h1 className="text-7xl md:text-9xl font-black tracking-tighter uppercase bg-clip-text text-transparent bg-gradient-to-b from-white to-cyan-500 mb-12 drop-shadow-2xl">Descanso</h1>
+                            <div className="relative group">
+                                <div className={`absolute inset-0 bg-cyan-500 blur-2xl opacity-40 group-hover:opacity-60 transition-opacity`}></div>
+                                <div className="relative bg-black/80 border border-cyan-500/30 backdrop-blur-xl px-20 py-10 rounded-2xl flex items-center justify-center shadow-[0_0_50px_rgba(6,182,212,0.2)]">
+                                    <span className="text-8xl md:text-[12rem] font-mono font-black tracking-widest text-cyan-400 leading-none">{formatTime(gameState.timeLeft)}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* --- VISTA: SPONSOR FULL SCREEN --- */}
+                        <div className={`w-full h-full transition-all duration-700 absolute flex items-center justify-center ${gameState.activeView === 'sponsor_full' ? 'opacity-100 scale-100 z-20' : 'opacity-0 scale-95 pointer-events-none z-0'}`}>
+                            <div className="text-center space-y-12 w-full max-w-5xl p-20 bg-black/60 backdrop-blur-2xl border border-white/10 rounded-3xl relative overflow-hidden shadow-2xl">
+                                <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${activeTheme.gradient}`}></div>
+                                <h3 className="text-2xl font-bold tracking-[0.4em] text-gray-400 uppercase">Presentado por</h3>
+                                
+                                <div className="h-72 w-full flex items-center justify-center relative">
+                                    {gameState.sponsorLogos && gameState.sponsorLogos.length > 0 ? (
+                                        gameState.sponsorLogos.map((logoUrl, idx) => (
+                                            <img
+                                                key={idx}
+                                                src={logoUrl}
+                                                alt="Sponsor Logo"
+                                                className={`absolute max-w-full max-h-full object-contain transition-opacity duration-1000 ${idx === currentLogoIdx ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
+                                            />
+                                        ))
+                                    ) : (
+                                        <div className="text-5xl md:text-7xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white via-gray-200 to-gray-600 opacity-30">
+                                            AÑADE TUS LOGOS<br/>DESDE EL PANEL
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -560,7 +755,7 @@
                             </div>
                             {/* BRANDING NOVABIT - BANNER PÚBLICO */}
                             <div className="hidden md:flex items-center gap-3 border-l border-white/20 pl-6 opacity-60 hover:opacity-100 transition-opacity shrink-0">
-                                <img src="https://i.imgur.com/pnRQVcv.png" alt="NovaBit" className="h-6 object-contain" />
+                                <img src="https://i.imgur.com/FnYqHyv.png" alt="NovaBit" className="h-6 object-contain" />
                                 <div className="flex flex-col justify-center">
                                     <span className="text-[8px] text-gray-300 font-bold tracking-[0.2em] uppercase leading-tight mb-0.5">Powered by NovaBit Media Agency</span>
                                     <span className="text-[6px] text-gray-500 tracking-[0.2em] uppercase leading-tight">Todos los Derechos Reservados</span>
