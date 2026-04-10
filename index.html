@@ -1,543 +1,580 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, RotateCcw, Monitor, Settings, X, Plus, Minus, Trophy, Clock, Zap, ChevronRight, ExternalLink, Trash2, Users, Coffee, AlertTriangle, Palette, Timer, Lock, KeyRound } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NovaScore - Padel Scoreboard</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" href="https://i.imgur.com/FnYqHyv.png">
 
-const POINTS = ['0', '15', '30', '40', 'Ad'];
-const SECRET_PIN = '181293'; // <-- CAMBIA ESTO POR TU CONTRASEÑA REAL
+    <!-- Tailwind CSS (CDN para usar las clases directamente) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome para los íconos (Sustituto de Lucide para HTML puro) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-const THEMES = {
-  pink: { 
-    name: 'MASTER (Rosa)', 
-    bg1: 'bg-pink-600', bg2: 'bg-indigo-600', 
-    text: 'text-pink-500', gradient: 'from-pink-500 to-indigo-500', border: 'border-pink-500', shadow: 'shadow-pink-500/20' 
-  },
-  blue: { 
-    name: 'OPEN (Azul)', 
-    bg1: 'bg-cyan-500', bg2: 'bg-blue-700', 
-    text: 'text-cyan-400', gradient: 'from-cyan-400 to-blue-600', border: 'border-cyan-400', shadow: 'shadow-cyan-500/20' 
-  },
-  gold: { 
-    name: 'FINALS (Dorado)', 
-    bg1: 'bg-yellow-500', bg2: 'bg-orange-700', 
-    text: 'text-yellow-400', gradient: 'from-yellow-400 to-orange-500', border: 'border-yellow-400', shadow: 'shadow-yellow-500/20' 
-  }
-};
+    <!-- React y ReactDOM (Versiones de producción) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel (Traductor de JSX a JavaScript entendible por el navegador) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-const BackgroundFX = ({ activeView, themeKey }) => {
-  const theme = THEMES[themeKey] || THEMES.pink;
-  return (
-    <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-      <div className={`absolute top-[-20%] left-[-10%] w-[60vw] h-[60vw] rounded-full mix-blend-screen filter blur-[120px] opacity-40 animate-pulse transition-colors duration-1000 ${activeView === 'halftime' ? 'bg-indigo-900' : theme.bg1}`}></div>
-      <div className={`absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full mix-blend-screen filter blur-[100px] opacity-40 transition-colors duration-1000 ${activeView === 'halftime' ? 'bg-blue-900' : theme.bg2}`}></div>
-      <div className="absolute top-[40%] left-[40%] w-[30vw] h-[30vw] bg-purple-600 rounded-full mix-blend-screen filter blur-[150px] opacity-10"></div>
-      <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '30px 30px' }}></div>
-    </div>
-  );
-};
-
-export default function PadelScoreboard() {
-  const bc = useRef(null);
-  
-  // --- SISTEMA DE SEGURIDAD ---
-  const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem('padel_auth_token') === 'true');
-  const [pinInput, setPinInput] = useState('');
-  const [authError, setAuthError] = useState(false);
-  
-  const [isPublicMode, setIsPublicMode] = useState(false);
-  const [showControls, setShowControls] = useState(false);
-  const [currentSponsorIdx, setCurrentSponsorIdx] = useState(0);
-
-  // --- ESTADO GLOBAL (Sincronizado) ---
-  const [gameState, setGameState] = useState({
-    activeView: 'scoreboard',
-    category: 'MASCULINO',
-    theme: 'pink',
-    team1: { p1: 'A. TAPIA', p2: 'A. COELLO', sets: [0, 0, 0], points: '0', tbPoints: 0 },
-    team2: { p1: 'F. CHINGOTTO', p2: 'A. GALÁN', sets: [0, 0, 0], points: '0', tbPoints: 0 },
-    server: 1,
-    currentSet: 0,
-    isTieBreak: false,
-    tvAlert: '',
-    timeLeft: 300, 
-    isTimerRunning: false,
-    matchClock: 0,
-    isMatchClockRunning: false,
-    sponsors: [
-      "TORNEO PATROCINADO POR: RED BULL",
-      "PALA OFICIAL: NOX PADEL",
-      "VISITA NUESTRO BAR PARA BEBIDAS FRÍAS"
-    ]
-  });
-
-  // CONFIGURACIÓN DEL FAVICON Y TÍTULO DE LA PÁGINA
-  useEffect(() => {
-    document.title = "NovaBit - Padel Scoreboard";
-    let link = document.querySelector("link[rel~='icon']");
-    if (!link) {
-      link = document.createElement('link');
-      link.rel = 'icon';
-      document.head.appendChild(link);
-    }
-    link.href = 'https://i.imgur.com/pnRQVcv.png';
-  }, []);
-
-  // PROTECCIÓN ANTI-INSPECCIÓN (F12, Click derecho)
-  useEffect(() => {
-    const handleContextMenu = (e) => e.preventDefault();
-    const handleKeyDown = (e) => {
-      if (
-        e.key === 'F12' || 
-        (e.ctrlKey && e.shiftKey && e.key === 'I') || 
-        (e.ctrlKey && e.shiftKey && e.key === 'J') || 
-        (e.ctrlKey && e.key === 'U')
-      ) {
-        e.preventDefault();
-      }
-    };
-
-    window.addEventListener('contextmenu', handleContextMenu);
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('contextmenu', handleContextMenu);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, []);
-
-  // Inicialización y Broadcast Channel
-  useEffect(() => {
-    if (window.location.search.includes('mode=display')) setIsPublicMode(true);
-
-    bc.current = new BroadcastChannel('padel_sync_channel');
-    bc.current.onmessage = (event) => {
-      if (event.data.type === 'SYNC_STATE') setGameState(event.data.payload);
-    };
-    return () => bc.current.close();
-  }, []);
-
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (pinInput === SECRET_PIN) {
-      localStorage.setItem('padel_auth_token', 'true');
-      setIsAuthenticated(true);
-      setAuthError(false);
-    } else {
-      setAuthError(true);
-      setPinInput('');
-    }
-  };
-
-  const updateGame = (updates) => {
-    setGameState(prev => {
-      const newState = { ...prev, ...updates };
-      if (bc.current) bc.current.postMessage({ type: 'SYNC_STATE', payload: newState });
-      return newState;
-    });
-  };
-
-  // Temporizadores
-  useEffect(() => {
-    let warmupInterval = null;
-    let matchInterval = null;
-
-    if (gameState.isTimerRunning && gameState.timeLeft > 0) {
-      warmupInterval = setInterval(() => {
-        setGameState(prev => ({ ...prev, timeLeft: prev.timeLeft - 1 }));
-      }, 1000);
-    } else if (gameState.timeLeft === 0 && gameState.isTimerRunning) {
-      updateGame({ isTimerRunning: false });
-    }
-
-    if (gameState.isMatchClockRunning) {
-      matchInterval = setInterval(() => {
-        setGameState(prev => ({ ...prev, matchClock: prev.matchClock + 1 }));
-      }, 1000);
-    }
-
-    return () => {
-      clearInterval(warmupInterval);
-      clearInterval(matchInterval);
-    };
-  }, [gameState.isTimerRunning, gameState.isMatchClockRunning]);
-
-  // Sponsors
-  useEffect(() => {
-    if (gameState.sponsors.length === 0) return;
-    const interval = setInterval(() => setCurrentSponsorIdx((prev) => (prev + 1) % gameState.sponsors.length), 5000);
-    return () => clearInterval(interval);
-  }, [gameState.sponsors.length]);
-
-  // --- HANDLERS MARCADOR ---
-  const handlePoints = (teamNum, direction) => {
-    const teamKey = teamNum === 1 ? 'team1' : 'team2';
-    const team = gameState[teamKey];
-
-    if (gameState.isTieBreak) {
-      let newTb = team.tbPoints;
-      if (direction === 'up') newTb++;
-      if (direction === 'down' && newTb > 0) newTb--;
-      updateGame({ [teamKey]: { ...team, tbPoints: newTb } });
-    } else {
-      const currentIndex = POINTS.indexOf(team.points);
-      let newIndex = currentIndex;
-      if (direction === 'up' && currentIndex < POINTS.length - 1) newIndex++;
-      if (direction === 'down' && currentIndex > 0) newIndex--;
-      updateGame({ [teamKey]: { ...team, points: POINTS[newIndex] } });
-    }
-  };
-
-  const updateGames = (teamNum, direction) => {
-    const teamKey = teamNum === 1 ? 'team1' : 'team2';
-    const team = gameState[teamKey];
-    let newSets = [...team.sets];
-    if (direction === 'up' && newSets[gameState.currentSet] < 7) newSets[gameState.currentSet]++;
-    if (direction === 'down' && newSets[gameState.currentSet] > 0) newSets[gameState.currentSet]--;
-    updateGame({ [teamKey]: { ...team, sets: newSets } });
-  };
-
-  const formatTime = (seconds, includeHours = false) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
-    const s = (seconds % 60).toString().padStart(2, '0');
-    if (includeHours && h > 0) return `${h}:${m}:${s}`;
-    return `${m}:${s}`;
-  };
-
-  const openPublicScreen = () => {
-    const url = window.location.href.split('?')[0] + '?mode=display';
-    window.open(url, 'PantallaPadel', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no');
-  };
-
-  const activeTheme = THEMES[gameState.theme];
-
-  // --- PANTALLA DE BLOQUEO ---
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center font-sans relative overflow-hidden" onContextMenu={(e) => e.preventDefault()}>
-        <BackgroundFX activeView="scoreboard" themeKey="pink" />
-        <div className="z-10 bg-black/60 backdrop-blur-2xl p-10 rounded-2xl border border-white/10 shadow-[0_0_50px_rgba(219,39,119,0.3)] w-full max-w-md text-center">
-          <div className="mx-auto w-20 h-20 bg-pink-600/20 rounded-full flex items-center justify-center mb-6 border border-pink-500/50">
-            <Lock className="text-pink-500" size={40} />
-          </div>
-          <h1 className="text-2xl font-black text-white tracking-widest uppercase mb-2">Acceso Restringido</h1>
-          <p className="text-gray-400 text-sm tracking-wider mb-8">SISTEMA OFICIAL DE MARCADOR</p>
-          
-          <form onSubmit={handleLogin} className="space-y-6">
-            <div>
-              <div className="relative">
-                <KeyRound className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-500" size={20} />
-                <input 
-                  type="password" 
-                  value={pinInput}
-                  onChange={(e) => setPinInput(e.target.value)}
-                  placeholder="INGRESE SU PIN" 
-                  className="w-full bg-black/50 border border-white/20 text-white font-bold text-center text-xl py-4 rounded-xl focus:outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500 transition-all uppercase tracking-[0.5em]"
-                  autoFocus
-                />
-              </div>
-              {authError && <p className="text-red-500 text-xs font-bold mt-3 animate-pulse uppercase tracking-widest">PIN INCORRECTO</p>}
-            </div>
-            <button type="submit" className="w-full bg-gradient-to-r from-pink-600 to-indigo-600 text-white font-black py-4 rounded-xl uppercase tracking-widest hover:opacity-90 transition-opacity shadow-[0_0_20px_rgba(219,39,119,0.4)]">
-              DESBLOQUEAR SISTEMA
-            </button>
-          </form>
-        </div>
-        
-        {/* BRANDING NOVABIT - PANTALLA DE BLOQUEO */}
-        <div className="absolute bottom-8 flex flex-col items-center opacity-50 hover:opacity-100 transition-opacity">
-          <img src="https://i.imgur.com/pnRQVcv.png" alt="NovaBit Media Agency" className="h-10 mb-2 object-contain" />
-          <span className="text-[9px] text-gray-400 font-bold tracking-[0.2em] uppercase">Powered by NovaBit Media Agency</span>
-          <span className="text-[7px] text-gray-500 tracking-[0.2em] uppercase mt-1">Todos los derechos reservados</span>
-        </div>
-      </div>
-    );
-  }
-
-  // --- RENDER CONTROL PANEL ---
-  const renderControlPanel = () => (
-    <div className={`fixed right-0 top-0 h-full w-[450px] bg-gray-900/95 backdrop-blur-xl border-l border-white/10 z-50 transform transition-transform duration-500 ease-in-out ${showControls ? 'translate-x-0' : 'translate-x-full'} shadow-2xl flex flex-col`} onContextMenu={(e) => e.stopPropagation()}>
-      <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/80">
-        <h2 className={`text-xl font-black tracking-widest ${activeTheme.text} flex items-center gap-2`}>
-          <Settings size={20}/> PANEL TV
-        </h2>
-        <button onClick={() => setShowControls(false)} className="text-gray-400 hover:text-white transition-colors">
-          <X size={24} />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-5 space-y-6 text-sm custom-scrollbar">
-        
-        {/* Multipantalla & Tema */}
-        <div className="grid grid-cols-2 gap-2">
-          <button onClick={openPublicScreen} className="py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold flex flex-col items-center justify-center gap-1 transition-colors shadow-lg shadow-indigo-500/20 text-xs">
-            <ExternalLink size={16}/> ABRIR PANTALLA 2
-          </button>
-          <div className="bg-white/5 border border-white/10 rounded p-2 flex flex-col justify-center">
-             <label className="text-gray-400 font-bold text-[10px] uppercase mb-1 flex items-center gap-1"><Palette size={12}/> TEMA VISUAL</label>
-             <select 
-               value={gameState.theme} 
-               onChange={e => updateGame({theme: e.target.value})}
-               className="bg-black/50 border border-white/20 text-white text-xs rounded p-1 w-full focus:outline-none focus:border-white"
-             >
-               {Object.entries(THEMES).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}
-             </select>
-          </div>
-        </div>
-
-        {/* Control de Vistas */}
-        <div className="space-y-2">
-          <label className="text-gray-400 font-bold tracking-wider text-xs uppercase">PANTALLA ACTIVA</label>
-          <div className="grid grid-cols-4 gap-2">
-            {[
-              { id: 'scoreboard', icon: <Monitor size={14}/>, label: 'MARCADOR' },
-              { id: 'warmup', icon: <Clock size={14}/>, label: 'CALENTAR' },
-              { id: 'halftime', icon: <Coffee size={14}/>, label: 'DESCANSO' },
-              { id: 'sponsor_full', icon: <Zap size={14}/>, label: 'SPONSOR' }
-            ].map(view => (
-              <button 
-                key={view.id}
-                onClick={() => updateGame({activeView: view.id})} 
-                className={`py-2 rounded border font-bold flex flex-col items-center gap-1 justify-center transition-all text-[10px] ${gameState.activeView === view.id ? `bg-white text-black border-white` : 'border-white/10 text-gray-400 hover:bg-white/5'}`}
-              >
-                {view.icon} {view.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* ALERTS Y RELOJ DE PARTIDO */}
-        <div className="bg-black/40 p-3 rounded-lg border border-white/5 space-y-3">
-          <div className="flex items-center justify-between border-b border-white/10 pb-2">
-             <label className="text-gray-400 font-bold tracking-wider text-xs uppercase flex items-center gap-2"><AlertTriangle size={14}/> ALERTAS TV</label>
-             <button onClick={() => updateGame({tvAlert: ''})} className="text-[10px] bg-red-500/20 text-red-400 px-2 py-1 rounded hover:bg-red-500/40">LIMPIAR</button>
-          </div>
-          <div className="flex gap-2">
-            {['PUNTO DE ORO', 'MATCH POINT', 'SET POINT'].map(alert => (
-              <button key={alert} onClick={() => updateGame({tvAlert: alert})} className={`flex-1 py-1.5 text-[10px] font-bold rounded border ${gameState.tvAlert === alert ? 'bg-yellow-500 text-black border-yellow-500' : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700'}`}>
-                {alert}
-              </button>
-            ))}
-          </div>
-          
-          <div className="flex items-center justify-between pt-2 border-t border-white/10">
-             <label className="text-gray-400 font-bold tracking-wider text-xs uppercase flex items-center gap-2"><Timer size={14}/> TIEMPO PARTIDO</label>
-             <div className="flex items-center gap-2">
-                 <span className="font-mono font-bold text-white">{formatTime(gameState.matchClock, true)}</span>
-                <button onClick={() => updateGame({isMatchClockRunning: !gameState.isMatchClockRunning})} className={`px-2 py-1 rounded text-xs font-bold ${gameState.isMatchClockRunning ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>
-                  {gameState.isMatchClockRunning ? 'PAUSAR' : 'INICIAR'}
-                </button>
-             </div>
-          </div>
-        </div>
-
-        {/* MARCADOR CONTROLES */}
-        <div className={`space-y-4 transition-opacity ${gameState.activeView !== 'scoreboard' ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
-          <div className="flex justify-between items-center border-b border-white/10 pb-2">
-            <label className="text-gray-400 font-bold tracking-wider text-xs uppercase">PUNTOS Y SETS</label>
-            <button onClick={() => updateGame({isTieBreak: !gameState.isTieBreak})} className={`text-xs px-3 py-1 rounded font-bold border transition-all ${gameState.isTieBreak ? 'bg-red-600 border-red-500 text-white animate-pulse' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>
-              MODO TIE-BREAK
-            </button>
-          </div>
-          
-          {[1, 2].map((num) => {
-            const teamKey = num === 1 ? 'team1' : 'team2';
-            const team = gameState[teamKey];
-            return (
-              <div key={`ctrl-t${num}`} className="bg-black/40 p-3 rounded-lg border border-white/5 space-y-3 relative overflow-hidden">
-                {gameState.server === num && <div className="absolute top-0 left-0 w-1 h-full bg-yellow-400"></div>}
-                <div className="flex items-start gap-2 pl-2">
-                  <div className="flex-1 space-y-1">
-                    <input type="text" value={team.p1} onChange={(e) => updateGame({ [teamKey]: { ...team, p1: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full focus:outline-none focus:border-white px-2 py-1 text-xs uppercase rounded" placeholder="Jugador 1"/>
-                    <input type="text" value={team.p2} onChange={(e) => updateGame({ [teamKey]: { ...team, p2: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full focus:outline-none focus:border-white px-2 py-1 text-xs uppercase rounded" placeholder="Jugador 2"/>
-                  </div>
-                  <button onClick={() => updateGame({server: num})} className={`text-[10px] px-2 py-2 rounded font-bold shrink-0 h-full ${gameState.server === num ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-400'}`}>
-                    SAQUE
-                  </button>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-3 pl-2">
-                  <div className="bg-white/5 p-2 rounded">
-                    <span className={`text-xs block mb-1 font-bold ${gameState.isTieBreak ? 'text-red-400' : 'text-gray-400'}`}>Puntos ({gameState.isTieBreak ? team.tbPoints : team.points})</span>
-                    <div className="flex gap-1">
-                      <button onClick={() => handlePoints(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 text-white py-1.5 rounded flex justify-center"><Minus size={14}/></button>
-                      <button onClick={() => handlePoints(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 text-white py-1.5 rounded flex justify-center"><Plus size={14}/></button>
-                    </div>
-                  </div>
-                  <div className="bg-white/5 p-2 rounded">
-                    <span className="text-gray-400 text-xs block mb-1 font-bold">Set {gameState.currentSet + 1} ({team.sets[gameState.currentSet]})</span>
-                    <div className="flex gap-1">
-                      <button onClick={() => updateGames(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 text-white py-1.5 rounded flex justify-center"><Minus size={14}/></button>
-                      <button onClick={() => updateGames(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 text-white py-1.5 rounded flex justify-center"><Plus size={14}/></button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-          
-          <div className="flex gap-1">
-            {[0, 1, 2].map(s => (
-              <button key={s} onClick={() => updateGame({currentSet: s})} className={`flex-1 py-1.5 text-xs font-bold rounded ${gameState.currentSet === s ? 'bg-white text-black' : 'bg-gray-800 text-gray-400'}`}>SET {s + 1}</button>
-            ))}
-          </div>
-        </div>
-
-        {/* BRANDING NOVABIT - PANEL DE CONTROL */}
-        <div className="mt-8 pt-6 border-t border-white/5 flex flex-col items-center justify-center opacity-60">
-          <img src="https://i.imgur.com/pnRQVcv.png" alt="NovaBit" className="h-8 mb-2 object-contain" />
-          <span className="text-[8px] text-gray-400 font-bold tracking-[0.2em] uppercase text-center">Powered by NovaBit Media Agency</span>
-          <span className="text-[6px] text-gray-500 tracking-widest uppercase mt-1">Todos los Derechos Reservados</span>
-        </div>
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="min-h-screen bg-[#0a0a0c] text-white font-sans overflow-hidden relative selection:bg-white/30 flex flex-col" onContextMenu={(e) => e.preventDefault()}>
-      <BackgroundFX activeView={gameState.activeView} themeKey={gameState.theme} />
-
-      {!isPublicMode && (
-        <button onClick={() => setShowControls(true)} className={`fixed bottom-6 right-6 z-40 ${activeTheme.bg1} backdrop-blur-md p-4 rounded-full border border-white/20 transition-all ${activeTheme.shadow} text-white hover:scale-110`}>
-          <Settings size={28} />
-        </button>
-      )}
-
-      {!isPublicMode && renderControlPanel()}
-
-      {/* CONTENEDOR PRINCIPAL */}
-      <div className="relative w-full h-screen flex flex-col justify-center items-center z-10 px-8 pb-14">
-        
-        {/* --- VISTA: MARCADOR --- */}
-        <div className={`w-full max-w-6xl transition-all duration-700 absolute flex flex-col justify-center ${gameState.activeView === 'scoreboard' ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}>
-          
-          {/* HEADER PREMIUM */}
-          <div className="mb-6 flex justify-between items-end border-b border-white/20 pb-4 relative">
-            <div>
-              <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase mb-1 flex items-center gap-3">
-                <Trophy className={activeTheme.text} size={40} />
-                <span className={`bg-clip-text text-transparent bg-gradient-to-r ${activeTheme.gradient}`}>{activeTheme.name.split(' ')[0]}</span>
-              </h1>
-              <p className="text-gray-400 tracking-[0.3em] font-bold text-sm">PISTA CENTRAL <span className="mx-2">•</span> OFICIAL</p>
-            </div>
-            
-            {/* Reloj de Partido */}
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
-              <span className="text-[10px] text-gray-500 font-bold tracking-[0.4em] uppercase mb-1">TIEMPO MATCH</span>
-              <div className="bg-black/60 backdrop-blur-md border border-white/10 px-6 py-1 rounded-full text-white font-mono font-bold text-xl tracking-widest shadow-inner">
-                {formatTime(gameState.matchClock, true)}
-              </div>
-            </div>
-
-            <div className="text-right">
-              <div className={`inline-block border border-white/20 px-6 py-2 bg-white/5 backdrop-blur-md font-bold tracking-widest text-sm ${activeTheme.text} ${activeTheme.shadow}`}>
-                {gameState.category}
-              </div>
-            </div>
-          </div>
-
-          {/* ALERTA TV FLASH */}
-          <div className={`w-full overflow-hidden transition-all duration-500 ease-out flex justify-center ${gameState.tvAlert ? 'max-h-20 mb-4 opacity-100' : 'max-h-0 opacity-0 mb-0'}`}>
-            <div className="bg-gradient-to-r from-transparent via-red-600 to-transparent w-full text-center py-2 border-y border-red-400/50">
-              <span className="text-white font-black tracking-[0.5em] text-2xl uppercase animate-pulse drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]">
-                {gameState.tvAlert}
-              </span>
-            </div>
-          </div>
-
-          {/* TABLA DE RESULTADOS ESTILO TV */}
-          <div className="border border-white/10 bg-black/50 backdrop-blur-2xl rounded-xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
-            
-            {/* Cabecera Columnas */}
-            <div className="grid grid-cols-[1fr_auto_auto_auto_130px] gap-1 border-b border-white/10 bg-black/60 text-gray-500 text-xs font-bold tracking-[0.2em] p-2 pr-4 text-center items-center">
-              <div className="text-left pl-14">JUGADORES</div>
-              <div className="w-16">1</div>
-              <div className="w-16">2</div>
-              <div className="w-16">3</div>
-              <div className={gameState.isTieBreak ? 'text-red-500 animate-pulse' : activeTheme.text}>
-                {gameState.isTieBreak ? 'TIE BREAK' : 'PTS'}
-              </div>
-            </div>
-
-            {/* Filas de Equipos */}
-            {[1, 2].map(num => {
-              const team = num === 1 ? gameState.team1 : gameState.team2;
-              const otherTeam = num === 1 ? gameState.team2 : gameState.team1;
-              return (
-                <div key={`row-${num}`} className={`grid grid-cols-[1fr_auto_auto_auto_130px] gap-1 items-stretch group ${num === 1 ? 'border-b border-white/5' : ''}`}>
-                  
-                  {/* Nombres Apilados (Estilo WPT/Premier) */}
-                  <div className="flex items-center px-4 py-4 gap-4 relative bg-gradient-to-r hover:from-white/5 to-transparent transition-colors">
-                    <div className="w-6 flex justify-center items-center h-full">
-                      {gameState.server === num && <div className="w-3 h-3 rounded-full bg-yellow-400 animate-pulse shadow-[0_0_15px_rgba(250,204,21,1)]"></div>}
-                    </div>
-                    <div className="flex flex-col border-l-2 border-white/20 pl-4 py-1">
-                      <span className="text-xl md:text-2xl font-black tracking-widest uppercase text-white/90 leading-tight">{team.p1}</span>
-                      <span className="text-xl md:text-2xl font-black tracking-widest uppercase text-white/90 leading-tight">{team.p2}</span>
-                    </div>
-                  </div>
-                  
-                  {/* Sets */}
-                  {[0, 1, 2].map(s => (
-                    <div key={`t${num}-s${s}`} className={`flex items-center justify-center w-16 text-3xl font-bold border-l border-white/5 ${gameState.currentSet === s ? 'text-white bg-white/5' : 'text-gray-600'} ${team.sets[s] >= 6 && team.sets[s] > otherTeam.sets[s] ? 'text-white' : ''}`}>
-                      {team.sets[s]}
-                    </div>
-                  ))}
-
-                  {/* Puntos de Juego */}
-                  <div className={`flex items-center justify-center text-6xl font-black tracking-tighter m-1 rounded-sm border-2 transition-all ${gameState.isTieBreak ? 'bg-red-600 border-red-400 text-white shadow-[0_0_20px_rgba(220,38,38,0.3)]' : 'bg-white border-transparent text-black'}`}>
-                    {gameState.isTieBreak ? team.tbPoints : team.points}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* --- DEMÁS VISTAS (Calentamiento, Entretiempo, Sponsors) --- */}
-        <div className={`w-full max-w-5xl transition-all duration-700 absolute flex flex-col items-center justify-center ${gameState.activeView === 'warmup' ? 'opacity-100 scale-100' : 'opacity-0 scale-105 pointer-events-none'}`}>
-          <div className={`mb-8 border-b-4 ${activeTheme.border} pb-2`}><h2 className="text-3xl md:text-4xl font-bold tracking-[0.3em] text-gray-400 uppercase">Tiempo de</h2></div>
-          <h1 className="text-7xl md:text-9xl font-black tracking-tighter uppercase bg-clip-text text-transparent bg-gradient-to-b from-white to-gray-500 mb-12 drop-shadow-2xl">Calentamiento</h1>
-          <div className="relative group">
-            <div className={`absolute inset-0 ${activeTheme.bg1} blur-2xl opacity-50 group-hover:opacity-70 transition-opacity`}></div>
-            <div className="relative bg-black/80 border border-white/20 backdrop-blur-xl px-20 py-10 rounded-2xl flex items-center justify-center">
-              <span className="text-8xl md:text-[12rem] font-mono font-black tracking-widest text-white leading-none">{formatTime(gameState.timeLeft)}</span>
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      {/* BANNER INFERIOR DINÁMICO */}
-      <div className={`fixed bottom-0 left-0 w-full bg-black/90 backdrop-blur-xl border-t border-white/10 h-14 flex items-center px-8 transition-transform duration-500 z-30 ${gameState.activeView === 'sponsor_full' ? 'translate-y-full' : 'translate-y-0'}`}>
-        <div className="flex-1 overflow-hidden relative h-full">
-          {gameState.sponsors.length > 0 && (
-            <div key={currentSponsorIdx} className="absolute inset-0 flex items-center text-sm md:text-base font-bold tracking-[0.2em] text-white uppercase animate-[slideInRight_0.5s_ease-out_forwards]">
-              <ChevronRight className={`${activeTheme.text} mr-4`} size={20} />
-              {gameState.sponsors[currentSponsorIdx]}
-            </div>
-          )}
-        </div>
-        <div className="ml-4 pl-4 border-l border-white/20 flex items-center gap-6">
-          <div className="flex items-center gap-2 text-xs font-bold tracking-widest text-gray-500 uppercase shrink-0">
-            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
-            EN DIRECTO
-          </div>
-          {/* BRANDING NOVABIT - BANNER PÚBLICO */}
-          <div className="hidden md:flex items-center gap-3 border-l border-white/20 pl-6 opacity-60 hover:opacity-100 transition-opacity shrink-0">
-            <img src="https://i.imgur.com/pnRQVcv.png" alt="NovaBit" className="h-6 object-contain" />
-            <div className="flex flex-col justify-center">
-              <span className="text-[8px] text-gray-300 font-bold tracking-[0.2em] uppercase leading-tight mb-0.5">Powered by NovaBit Media Agency</span>
-              <span className="text-[6px] text-gray-500 tracking-[0.2em] uppercase leading-tight">Todos los Derechos Reservados</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <style dangerouslySetInnerHTML={{__html: `
-        @keyframes slideInRight { from { transform: translateX(50px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    <style>
+        /* Estilos personalizados para la barra de scroll */
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
-      `}} />
-    </div>
-  );
-}
+        
+        /* Animación para el banner de sponsors */
+        @keyframes slideInRight { 
+            from { transform: translateX(50px); opacity: 0; } 
+            to { transform: translateX(0); opacity: 1; } 
+        }
+        
+        body { margin: 0; overflow: hidden; background-color: #0a0a0c; }
+    </style>
+</head>
+<body>
+    <!-- Contenedor donde React inyectará la aplicación -->
+    <div id="root"></div>
+
+    <!-- Script de la aplicación (type="text/babel" es CRUCIAL aquí) -->
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const POINTS = ['0', '15', '30', '40', 'Ad'];
+        const SECRET_PIN = '2024'; // <-- CAMBIA ESTO POR TU CONTRASEÑA REAL
+
+        const THEMES = {
+            pink: { 
+                name: 'MASTER (Rosa)', 
+                bg1: 'bg-pink-600', bg2: 'bg-indigo-600', 
+                text: 'text-pink-500', gradient: 'from-pink-500 to-indigo-500', border: 'border-pink-500', shadow: 'shadow-pink-500/20' 
+            },
+            blue: { 
+                name: 'OPEN (Azul)', 
+                bg1: 'bg-cyan-500', bg2: 'bg-blue-700', 
+                text: 'text-cyan-400', gradient: 'from-cyan-400 to-blue-600', border: 'border-cyan-400', shadow: 'shadow-cyan-500/20' 
+            },
+            gold: { 
+                name: 'FINALS (Dorado)', 
+                bg1: 'bg-yellow-500', bg2: 'bg-orange-700', 
+                text: 'text-yellow-400', gradient: 'from-yellow-400 to-orange-500', border: 'border-yellow-400', shadow: 'shadow-yellow-500/20' 
+            }
+        };
+
+        const BackgroundFX = ({ activeView, themeKey }) => {
+            const theme = THEMES[themeKey] || THEMES.pink;
+            return (
+                <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+                    <div className={`absolute top-[-20%] left-[-10%] w-[60vw] h-[60vw] rounded-full mix-blend-screen filter blur-[120px] opacity-40 animate-pulse transition-colors duration-1000 ${activeView === 'halftime' ? 'bg-indigo-900' : theme.bg1}`}></div>
+                    <div className={`absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full mix-blend-screen filter blur-[100px] opacity-40 transition-colors duration-1000 ${activeView === 'halftime' ? 'bg-blue-900' : theme.bg2}`}></div>
+                    <div className="absolute top-[40%] left-[40%] w-[30vw] h-[30vw] bg-purple-600 rounded-full mix-blend-screen filter blur-[150px] opacity-10"></div>
+                    <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '30px 30px' }}></div>
+                </div>
+            );
+        };
+
+        function PadelScoreboard() {
+            const bc = useRef(null);
+            
+            // --- SISTEMA DE SEGURIDAD ---
+            const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem('padel_auth_token') === 'true');
+            const [pinInput, setPinInput] = useState('');
+            const [authError, setAuthError] = useState(false);
+            
+            const [isPublicMode, setIsPublicMode] = useState(false);
+            const [showControls, setShowControls] = useState(false);
+            const [currentSponsorIdx, setCurrentSponsorIdx] = useState(0);
+
+            // --- ESTADO GLOBAL (Sincronizado) ---
+            const [gameState, setGameState] = useState({
+                activeView: 'scoreboard',
+                category: 'MASCULINO',
+                theme: 'pink',
+                team1: { p1: 'A. TAPIA', p2: 'A. COELLO', sets: [0, 0, 0], points: '0', tbPoints: 0 },
+                team2: { p1: 'F. CHINGOTTO', p2: 'A. GALÁN', sets: [0, 0, 0], points: '0', tbPoints: 0 },
+                server: 1,
+                currentSet: 0,
+                isTieBreak: false,
+                tvAlert: '',
+                timeLeft: 300, 
+                isTimerRunning: false,
+                matchClock: 0,
+                isMatchClockRunning: false,
+                sponsors: [
+                    "TORNEO PATROCINADO POR: RED BULL",
+                    "PALA OFICIAL: NOX PADEL",
+                    "VISITA NUESTRO BAR PARA BEBIDAS FRÍAS"
+                ]
+            });
+
+            // PROTECCIÓN ANTI-INSPECCIÓN (F12, Click derecho)
+            useEffect(() => {
+                const handleContextMenu = (e) => e.preventDefault();
+                const handleKeyDown = (e) => {
+                    if (
+                        e.key === 'F12' || 
+                        (e.ctrlKey && e.shiftKey && e.key === 'I') || 
+                        (e.ctrlKey && e.shiftKey && e.key === 'J') || 
+                        (e.ctrlKey && e.key === 'U')
+                    ) {
+                        e.preventDefault();
+                    }
+                };
+
+                window.addEventListener('contextmenu', handleContextMenu);
+                window.addEventListener('keydown', handleKeyDown);
+
+                return () => {
+                    window.removeEventListener('contextmenu', handleContextMenu);
+                    window.removeEventListener('keydown', handleKeyDown);
+                };
+            }, []);
+
+            // Inicialización y Broadcast Channel
+            useEffect(() => {
+                if (window.location.search.includes('mode=display')) setIsPublicMode(true);
+
+                bc.current = new BroadcastChannel('padel_sync_channel');
+                bc.current.onmessage = (event) => {
+                    if (event.data.type === 'SYNC_STATE') setGameState(event.data.payload);
+                };
+                return () => bc.current.close();
+            }, []);
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                if (pinInput === SECRET_PIN) {
+                    localStorage.setItem('padel_auth_token', 'true');
+                    setIsAuthenticated(true);
+                    setAuthError(false);
+                } else {
+                    setAuthError(true);
+                    setPinInput('');
+                }
+            };
+
+            const updateGame = (updates) => {
+                setGameState(prev => {
+                    const newState = { ...prev, ...updates };
+                    if (bc.current) bc.current.postMessage({ type: 'SYNC_STATE', payload: newState });
+                    return newState;
+                });
+            };
+
+            // Temporizadores
+            useEffect(() => {
+                let warmupInterval = null;
+                let matchInterval = null;
+
+                if (gameState.isTimerRunning && gameState.timeLeft > 0) {
+                    warmupInterval = setInterval(() => {
+                        setGameState(prev => ({ ...prev, timeLeft: prev.timeLeft - 1 }));
+                    }, 1000);
+                } else if (gameState.timeLeft === 0 && gameState.isTimerRunning) {
+                    updateGame({ isTimerRunning: false });
+                }
+
+                if (gameState.isMatchClockRunning) {
+                    matchInterval = setInterval(() => {
+                        setGameState(prev => ({ ...prev, matchClock: prev.matchClock + 1 }));
+                    }, 1000);
+                }
+
+                return () => {
+                    clearInterval(warmupInterval);
+                    clearInterval(matchInterval);
+                };
+            }, [gameState.isTimerRunning, gameState.isMatchClockRunning]);
+
+            // Sponsors
+            useEffect(() => {
+                if (gameState.sponsors.length === 0) return;
+                const interval = setInterval(() => setCurrentSponsorIdx((prev) => (prev + 1) % gameState.sponsors.length), 5000);
+                return () => clearInterval(interval);
+            }, [gameState.sponsors.length]);
+
+            // --- HANDLERS MARCADOR ---
+            const handlePoints = (teamNum, direction) => {
+                const teamKey = teamNum === 1 ? 'team1' : 'team2';
+                const team = gameState[teamKey];
+
+                if (gameState.isTieBreak) {
+                    let newTb = team.tbPoints;
+                    if (direction === 'up') newTb++;
+                    if (direction === 'down' && newTb > 0) newTb--;
+                    updateGame({ [teamKey]: { ...team, tbPoints: newTb } });
+                } else {
+                    const currentIndex = POINTS.indexOf(team.points);
+                    let newIndex = currentIndex;
+                    if (direction === 'up' && currentIndex < POINTS.length - 1) newIndex++;
+                    if (direction === 'down' && currentIndex > 0) newIndex--;
+                    updateGame({ [teamKey]: { ...team, points: POINTS[newIndex] } });
+                }
+            };
+
+            const updateGames = (teamNum, direction) => {
+                const teamKey = teamNum === 1 ? 'team1' : 'team2';
+                const team = gameState[teamKey];
+                let newSets = [...team.sets];
+                if (direction === 'up' && newSets[gameState.currentSet] < 7) newSets[gameState.currentSet]++;
+                if (direction === 'down' && newSets[gameState.currentSet] > 0) newSets[gameState.currentSet]--;
+                updateGame({ [teamKey]: { ...team, sets: newSets } });
+            };
+
+            const formatTime = (seconds, includeHours = false) => {
+                const h = Math.floor(seconds / 3600);
+                const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+                const s = (seconds % 60).toString().padStart(2, '0');
+                if (includeHours && h > 0) return `${h}:${m}:${s}`;
+                return `${m}:${s}`;
+            };
+
+            const openPublicScreen = () => {
+                const url = window.location.href.split('?')[0] + '?mode=display';
+                window.open(url, 'PantallaPadel', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no');
+            };
+
+            const activeTheme = THEMES[gameState.theme];
+
+            // --- PANTALLA DE BLOQUEO ---
+            if (!isAuthenticated) {
+                return (
+                    <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center font-sans relative overflow-hidden text-white" onContextMenu={(e) => e.preventDefault()}>
+                        <BackgroundFX activeView="scoreboard" themeKey="pink" />
+                        <div className="z-10 bg-black/60 backdrop-blur-2xl p-10 rounded-2xl border border-white/10 shadow-[0_0_50px_rgba(219,39,119,0.3)] w-full max-w-md text-center">
+                            <div className="mx-auto w-20 h-20 bg-pink-600/20 rounded-full flex items-center justify-center mb-6 border border-pink-500/50">
+                                <i className="fa-solid fa-lock text-pink-500 text-[40px]"></i>
+                            </div>
+                            <h1 className="text-2xl font-black text-white tracking-widest uppercase mb-2">Acceso Restringido</h1>
+                            <p className="text-gray-400 text-sm tracking-wider mb-8">SISTEMA OFICIAL DE MARCADOR</p>
+                            
+                            <form onSubmit={handleLogin} className="space-y-6">
+                                <div>
+                                    <div className="relative">
+                                        <i className="fa-solid fa-key absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-500 text-[20px]"></i>
+                                        <input 
+                                            type="password" 
+                                            value={pinInput}
+                                            onChange={(e) => setPinInput(e.target.value)}
+                                            placeholder="INGRESE SU PIN" 
+                                            className="w-full bg-black/50 border border-white/20 text-white font-bold text-center text-xl py-4 rounded-xl focus:outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500 transition-all uppercase tracking-[0.5em]"
+                                            autoFocus
+                                        />
+                                    </div>
+                                    {authError && <p className="text-red-500 text-xs font-bold mt-3 animate-pulse uppercase tracking-widest">PIN INCORRECTO</p>}
+                                </div>
+                                <button type="submit" className="w-full bg-gradient-to-r from-pink-600 to-indigo-600 text-white font-black py-4 rounded-xl uppercase tracking-widest hover:opacity-90 transition-opacity shadow-[0_0_20px_rgba(219,39,119,0.4)]">
+                                    DESBLOQUEAR SISTEMA
+                                </button>
+                            </form>
+                        </div>
+                        
+                        {/* BRANDING NOVABIT - PANTALLA DE BLOQUEO */}
+                        <div className="absolute bottom-8 flex flex-col items-center opacity-50 hover:opacity-100 transition-opacity">
+                            <img src="https://i.imgur.com/pnRQVcv.png" alt="NovaBit Media Agency" className="h-10 mb-2 object-contain" />
+                            <span className="text-[9px] text-gray-400 font-bold tracking-[0.2em] uppercase">Powered by NovaBit Media Agency</span>
+                            <span className="text-[7px] text-gray-500 tracking-[0.2em] uppercase mt-1">Todos los derechos reservados</span>
+                        </div>
+                    </div>
+                );
+            }
+
+            // --- RENDER CONTROL PANEL ---
+            const renderControlPanel = () => (
+                <div className={`fixed right-0 top-0 h-full w-[450px] bg-gray-900/95 backdrop-blur-xl border-l border-white/10 z-50 transform transition-transform duration-500 ease-in-out ${showControls ? 'translate-x-0' : 'translate-x-full'} shadow-2xl flex flex-col text-white`} onContextMenu={(e) => e.stopPropagation()}>
+                    <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/80">
+                        <h2 className={`text-xl font-black tracking-widest ${activeTheme.text} flex items-center gap-2`}>
+                            <i className="fa-solid fa-gear text-[20px]"></i> PANEL TV
+                        </h2>
+                        <button onClick={() => setShowControls(false)} className="text-gray-400 hover:text-white transition-colors">
+                            <i className="fa-solid fa-xmark text-[24px]"></i>
+                        </button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-5 space-y-6 text-sm custom-scrollbar">
+                        
+                        {/* Multipantalla & Tema */}
+                        <div className="grid grid-cols-2 gap-2">
+                            <button onClick={openPublicScreen} className="py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold flex flex-col items-center justify-center gap-1 transition-colors shadow-lg shadow-indigo-500/20 text-xs">
+                                <i className="fa-solid fa-arrow-up-right-from-square text-[16px]"></i> ABRIR PANTALLA 2
+                            </button>
+                            <div className="bg-white/5 border border-white/10 rounded p-2 flex flex-col justify-center">
+                                 <label className="text-gray-400 font-bold text-[10px] uppercase mb-1 flex items-center gap-1">
+                                    <i className="fa-solid fa-palette text-[12px]"></i> TEMA VISUAL
+                                 </label>
+                                 <select 
+                                     value={gameState.theme} 
+                                     onChange={e => updateGame({theme: e.target.value})}
+                                     className="bg-black/50 border border-white/20 text-white text-xs rounded p-1 w-full focus:outline-none focus:border-white"
+                                 >
+                                     {Object.entries(THEMES).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}
+                                 </select>
+                            </div>
+                        </div>
+
+                        {/* Control de Vistas */}
+                        <div className="space-y-2">
+                            <label className="text-gray-400 font-bold tracking-wider text-xs uppercase">PANTALLA ACTIVA</label>
+                            <div className="grid grid-cols-4 gap-2">
+                                {[
+                                    { id: 'scoreboard', icon: 'fa-desktop', label: 'MARCADOR' },
+                                    { id: 'warmup', icon: 'fa-clock', label: 'CALENTAR' },
+                                    { id: 'halftime', icon: 'fa-mug-hot', label: 'DESCANSO' },
+                                    { id: 'sponsor_full', icon: 'fa-bolt', label: 'SPONSOR' }
+                                ].map(view => (
+                                    <button 
+                                        key={view.id}
+                                        onClick={() => updateGame({activeView: view.id})} 
+                                        className={`py-2 rounded border font-bold flex flex-col items-center gap-1 justify-center transition-all text-[10px] ${gameState.activeView === view.id ? `bg-white text-black border-white` : 'border-white/10 text-gray-400 hover:bg-white/5'}`}
+                                    >
+                                        <i className={`fa-solid ${view.icon} text-[14px]`}></i> {view.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* ALERTS Y RELOJ DE PARTIDO */}
+                        <div className="bg-black/40 p-3 rounded-lg border border-white/5 space-y-3">
+                            <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                                 <label className="text-gray-400 font-bold tracking-wider text-xs uppercase flex items-center gap-2">
+                                    <i className="fa-solid fa-triangle-exclamation text-[14px]"></i> ALERTAS TV
+                                 </label>
+                                 <button onClick={() => updateGame({tvAlert: ''})} className="text-[10px] bg-red-500/20 text-red-400 px-2 py-1 rounded hover:bg-red-500/40">LIMPIAR</button>
+                            </div>
+                            <div className="flex gap-2">
+                                {['PUNTO DE ORO', 'MATCH POINT', 'SET POINT'].map(alert => (
+                                    <button key={alert} onClick={() => updateGame({tvAlert: alert})} className={`flex-1 py-1.5 text-[10px] font-bold rounded border ${gameState.tvAlert === alert ? 'bg-yellow-500 text-black border-yellow-500' : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700'}`}>
+                                        {alert}
+                                    </button>
+                                ))}
+                            </div>
+                            
+                            <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                                 <label className="text-gray-400 font-bold tracking-wider text-xs uppercase flex items-center gap-2">
+                                    <i className="fa-solid fa-stopwatch text-[14px]"></i> TIEMPO PARTIDO
+                                 </label>
+                                 <div className="flex items-center gap-2">
+                                     <span className="font-mono font-bold text-white">{formatTime(gameState.matchClock, true)}</span>
+                                     <button onClick={() => updateGame({isMatchClockRunning: !gameState.isMatchClockRunning})} className={`px-2 py-1 rounded text-xs font-bold ${gameState.isMatchClockRunning ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>
+                                         {gameState.isMatchClockRunning ? 'PAUSAR' : 'INICIAR'}
+                                     </button>
+                                 </div>
+                            </div>
+                        </div>
+
+                        {/* MARCADOR CONTROLES */}
+                        <div className={`space-y-4 transition-opacity ${gameState.activeView !== 'scoreboard' ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
+                            <div className="flex justify-between items-center border-b border-white/10 pb-2">
+                                <label className="text-gray-400 font-bold tracking-wider text-xs uppercase">PUNTOS Y SETS</label>
+                                <button onClick={() => updateGame({isTieBreak: !gameState.isTieBreak})} className={`text-xs px-3 py-1 rounded font-bold border transition-all ${gameState.isTieBreak ? 'bg-red-600 border-red-500 text-white animate-pulse' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>
+                                    MODO TIE-BREAK
+                                </button>
+                            </div>
+                            
+                            {[1, 2].map((num) => {
+                                const teamKey = num === 1 ? 'team1' : 'team2';
+                                const team = gameState[teamKey];
+                                return (
+                                    <div key={`ctrl-t${num}`} className="bg-black/40 p-3 rounded-lg border border-white/5 space-y-3 relative overflow-hidden">
+                                        {gameState.server === num && <div className="absolute top-0 left-0 w-1 h-full bg-yellow-400"></div>}
+                                        <div className="flex items-start gap-2 pl-2">
+                                            <div className="flex-1 space-y-1">
+                                                <input type="text" value={team.p1} onChange={(e) => updateGame({ [teamKey]: { ...team, p1: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full focus:outline-none focus:border-white px-2 py-1 text-xs uppercase rounded" placeholder="Jugador 1"/>
+                                                <input type="text" value={team.p2} onChange={(e) => updateGame({ [teamKey]: { ...team, p2: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full focus:outline-none focus:border-white px-2 py-1 text-xs uppercase rounded" placeholder="Jugador 2"/>
+                                            </div>
+                                            <button onClick={() => updateGame({server: num})} className={`text-[10px] px-2 py-2 rounded font-bold shrink-0 h-full ${gameState.server === num ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-400'}`}>
+                                                SAQUE
+                                            </button>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-2 gap-3 pl-2">
+                                            <div className="bg-white/5 p-2 rounded">
+                                                <span className={`text-xs block mb-1 font-bold ${gameState.isTieBreak ? 'text-red-400' : 'text-gray-400'}`}>Puntos ({gameState.isTieBreak ? team.tbPoints : team.points})</span>
+                                                <div className="flex gap-1">
+                                                    <button onClick={() => handlePoints(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 text-white py-1.5 rounded flex justify-center"><i className="fa-solid fa-minus text-[14px]"></i></button>
+                                                    <button onClick={() => handlePoints(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 text-white py-1.5 rounded flex justify-center"><i className="fa-solid fa-plus text-[14px]"></i></button>
+                                                </div>
+                                            </div>
+                                            <div className="bg-white/5 p-2 rounded">
+                                                <span className="text-gray-400 text-xs block mb-1 font-bold">Set {gameState.currentSet + 1} ({team.sets[gameState.currentSet]})</span>
+                                                <div className="flex gap-1">
+                                                    <button onClick={() => updateGames(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 text-white py-1.5 rounded flex justify-center"><i className="fa-solid fa-minus text-[14px]"></i></button>
+                                                    <button onClick={() => updateGames(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 text-white py-1.5 rounded flex justify-center"><i className="fa-solid fa-plus text-[14px]"></i></button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                            
+                            <div className="flex gap-1">
+                                {[0, 1, 2].map(s => (
+                                    <button key={s} onClick={() => updateGame({currentSet: s})} className={`flex-1 py-1.5 text-xs font-bold rounded ${gameState.currentSet === s ? 'bg-white text-black' : 'bg-gray-800 text-gray-400'}`}>SET {s + 1}</button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* BRANDING NOVABIT - PANEL DE CONTROL */}
+                        <div className="mt-8 pt-6 border-t border-white/5 flex flex-col items-center justify-center opacity-60">
+                            <img src="https://i.imgur.com/pnRQVcv.png" alt="NovaBit" className="h-8 mb-2 object-contain" />
+                            <span className="text-[8px] text-gray-400 font-bold tracking-[0.2em] uppercase text-center">Powered by NovaBit Media Agency</span>
+                            <span className="text-[6px] text-gray-500 tracking-widest uppercase mt-1">Todos los Derechos Reservados</span>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="min-h-screen bg-[#0a0a0c] text-white font-sans overflow-hidden relative selection:bg-white/30 flex flex-col" onContextMenu={(e) => e.preventDefault()}>
+                    <BackgroundFX activeView={gameState.activeView} themeKey={gameState.theme} />
+
+                    {!isPublicMode && (
+                        <button onClick={() => setShowControls(true)} className={`fixed bottom-6 right-6 z-40 ${activeTheme.bg1} backdrop-blur-md p-4 rounded-full border border-white/20 transition-all ${activeTheme.shadow} text-white hover:scale-110`}>
+                            <i className="fa-solid fa-gear text-[28px]"></i>
+                        </button>
+                    )}
+
+                    {!isPublicMode && renderControlPanel()}
+
+                    {/* CONTENEDOR PRINCIPAL */}
+                    <div className="relative w-full h-screen flex flex-col justify-center items-center z-10 px-8 pb-14">
+                        
+                        {/* --- VISTA: MARCADOR --- */}
+                        <div className={`w-full max-w-6xl transition-all duration-700 absolute flex flex-col justify-center ${gameState.activeView === 'scoreboard' ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}>
+                            
+                            {/* HEADER PREMIUM */}
+                            <div className="mb-6 flex justify-between items-end border-b border-white/20 pb-4 relative">
+                                <div>
+                                    <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase mb-1 flex items-center gap-3">
+                                        <i className={`fa-solid fa-trophy text-[40px] ${activeTheme.text}`}></i>
+                                        <span className={`bg-clip-text text-transparent bg-gradient-to-r ${activeTheme.gradient}`}>{activeTheme.name.split(' ')[0]}</span>
+                                    </h1>
+                                    <p className="text-gray-400 tracking-[0.3em] font-bold text-sm">PISTA CENTRAL <span className="mx-2">•</span> OFICIAL</p>
+                                </div>
+                                
+                                {/* Reloj de Partido */}
+                                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
+                                    <span className="text-[10px] text-gray-500 font-bold tracking-[0.4em] uppercase mb-1">TIEMPO MATCH</span>
+                                    <div className="bg-black/60 backdrop-blur-md border border-white/10 px-6 py-1 rounded-full text-white font-mono font-bold text-xl tracking-widest shadow-inner">
+                                        {formatTime(gameState.matchClock, true)}
+                                    </div>
+                                </div>
+
+                                <div className="text-right">
+                                    <div className={`inline-block border border-white/20 px-6 py-2 bg-white/5 backdrop-blur-md font-bold tracking-widest text-sm ${activeTheme.text} ${activeTheme.shadow}`}>
+                                        {gameState.category}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* ALERTA TV FLASH */}
+                            <div className={`w-full overflow-hidden transition-all duration-500 ease-out flex justify-center ${gameState.tvAlert ? 'max-h-20 mb-4 opacity-100' : 'max-h-0 opacity-0 mb-0'}`}>
+                                <div className="bg-gradient-to-r from-transparent via-red-600 to-transparent w-full text-center py-2 border-y border-red-400/50">
+                                    <span className="text-white font-black tracking-[0.5em] text-2xl uppercase animate-pulse drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]">
+                                        {gameState.tvAlert}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* TABLA DE RESULTADOS ESTILO TV */}
+                            <div className="border border-white/10 bg-black/50 backdrop-blur-2xl rounded-xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+                                
+                                {/* Cabecera Columnas */}
+                                <div className="grid grid-cols-[1fr_auto_auto_auto_130px] gap-1 border-b border-white/10 bg-black/60 text-gray-500 text-xs font-bold tracking-[0.2em] p-2 pr-4 text-center items-center">
+                                    <div className="text-left pl-14">JUGADORES</div>
+                                    <div className="w-16">1</div>
+                                    <div className="w-16">2</div>
+                                    <div className="w-16">3</div>
+                                    <div className={gameState.isTieBreak ? 'text-red-500 animate-pulse' : activeTheme.text}>
+                                        {gameState.isTieBreak ? 'TIE BREAK' : 'PTS'}
+                                    </div>
+                                </div>
+
+                                {/* Filas de Equipos */}
+                                {[1, 2].map(num => {
+                                    const team = num === 1 ? gameState.team1 : gameState.team2;
+                                    const otherTeam = num === 1 ? gameState.team2 : gameState.team1;
+                                    return (
+                                        <div key={`row-${num}`} className={`grid grid-cols-[1fr_auto_auto_auto_130px] gap-1 items-stretch group ${num === 1 ? 'border-b border-white/5' : ''}`}>
+                                            
+                                            {/* Nombres Apilados (Estilo WPT/Premier) */}
+                                            <div className="flex items-center px-4 py-4 gap-4 relative bg-gradient-to-r hover:from-white/5 to-transparent transition-colors">
+                                                <div className="w-6 flex justify-center items-center h-full">
+                                                    {gameState.server === num && <div className="w-3 h-3 rounded-full bg-yellow-400 animate-pulse shadow-[0_0_15px_rgba(250,204,21,1)]"></div>}
+                                                </div>
+                                                <div className="flex flex-col border-l-2 border-white/20 pl-4 py-1">
+                                                    <span className="text-xl md:text-2xl font-black tracking-widest uppercase text-white/90 leading-tight">{team.p1}</span>
+                                                    <span className="text-xl md:text-2xl font-black tracking-widest uppercase text-white/90 leading-tight">{team.p2}</span>
+                                                </div>
+                                            </div>
+                                            
+                                            {/* Sets */}
+                                            {[0, 1, 2].map(s => (
+                                                <div key={`t${num}-s${s}`} className={`flex items-center justify-center w-16 text-3xl font-bold border-l border-white/5 ${gameState.currentSet === s ? 'text-white bg-white/5' : 'text-gray-600'} ${team.sets[s] >= 6 && team.sets[s] > otherTeam.sets[s] ? 'text-white' : ''}`}>
+                                                    {team.sets[s]}
+                                                </div>
+                                            ))}
+
+                                            {/* Puntos de Juego */}
+                                            <div className={`flex items-center justify-center text-6xl font-black tracking-tighter m-1 rounded-sm border-2 transition-all ${gameState.isTieBreak ? 'bg-red-600 border-red-400 text-white shadow-[0_0_20px_rgba(220,38,38,0.3)]' : 'bg-white border-transparent text-black'}`}>
+                                                {gameState.isTieBreak ? team.tbPoints : team.points}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* --- DEMÁS VISTAS (Calentamiento, Entretiempo, Sponsors) --- */}
+                        <div className={`w-full max-w-5xl transition-all duration-700 absolute flex flex-col items-center justify-center ${gameState.activeView === 'warmup' ? 'opacity-100 scale-100' : 'opacity-0 scale-105 pointer-events-none'}`}>
+                            <div className={`mb-8 border-b-4 ${activeTheme.border} pb-2`}><h2 className="text-3xl md:text-4xl font-bold tracking-[0.3em] text-gray-400 uppercase">Tiempo de</h2></div>
+                            <h1 className="text-7xl md:text-9xl font-black tracking-tighter uppercase bg-clip-text text-transparent bg-gradient-to-b from-white to-gray-500 mb-12 drop-shadow-2xl">Calentamiento</h1>
+                            <div className="relative group">
+                                <div className={`absolute inset-0 ${activeTheme.bg1} blur-2xl opacity-50 group-hover:opacity-70 transition-opacity`}></div>
+                                <div className="relative bg-black/80 border border-white/20 backdrop-blur-xl px-20 py-10 rounded-2xl flex items-center justify-center">
+                                    <span className="text-8xl md:text-[12rem] font-mono font-black tracking-widest text-white leading-none">{formatTime(gameState.timeLeft)}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    {/* BANNER INFERIOR DINÁMICO */}
+                    <div className={`fixed bottom-0 left-0 w-full bg-black/90 backdrop-blur-xl border-t border-white/10 h-14 flex items-center px-8 transition-transform duration-500 z-30 ${gameState.activeView === 'sponsor_full' ? 'translate-y-full' : 'translate-y-0'}`}>
+                        <div className="flex-1 overflow-hidden relative h-full">
+                            {gameState.sponsors.length > 0 && (
+                                <div key={currentSponsorIdx} className="absolute inset-0 flex items-center text-sm md:text-base font-bold tracking-[0.2em] text-white uppercase animate-[slideInRight_0.5s_ease-out_forwards]">
+                                    <i className={`fa-solid fa-chevron-right text-[20px] ${activeTheme.text} mr-4`}></i>
+                                    {gameState.sponsors[currentSponsorIdx]}
+                                </div>
+                            )}
+                        </div>
+                        <div className="ml-4 pl-4 border-l border-white/20 flex items-center gap-6">
+                            <div className="flex items-center gap-2 text-xs font-bold tracking-widest text-gray-500 uppercase shrink-0">
+                                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
+                                EN DIRECTO
+                            </div>
+                            {/* BRANDING NOVABIT - BANNER PÚBLICO */}
+                            <div className="hidden md:flex items-center gap-3 border-l border-white/20 pl-6 opacity-60 hover:opacity-100 transition-opacity shrink-0">
+                                <img src="https://i.imgur.com/pnRQVcv.png" alt="NovaBit" className="h-6 object-contain" />
+                                <div className="flex flex-col justify-center">
+                                    <span className="text-[8px] text-gray-300 font-bold tracking-[0.2em] uppercase leading-tight mb-0.5">Powered by NovaBit Media Agency</span>
+                                    <span className="text-[6px] text-gray-500 tracking-[0.2em] uppercase leading-tight">Todos los Derechos Reservados</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Renderizar la aplicación en el div con id "root"
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<PadelScoreboard />);
+    </script>
+</body>
+</html>
