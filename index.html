@@ -3,13 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NovaScore - Padel Scoreboard Pro</title>
+    <title>NovaBit - Padel Scoreboard Pro</title>
     
     <link rel="icon" href="https://i.imgur.com/FnYqHyv.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    <!-- Mapas de importación para usar ES Modules nativos en el navegador -->
     <script type="importmap">
         {
             "imports": {
@@ -50,21 +49,17 @@
         import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 
         // --- CONFIGURACIÓN DE FIREBASE ---
-        // (Nota: Si vas a hospedar en GitHub, debes reemplazar este bloque 'firebaseConfig' con las credenciales de tu proyecto de Firebase. 
-        // Mientras lo pruebes aquí en la plataforma, usará el predeterminado automático).
         let firebaseConfig = {
             apiKey: "AIzaSyC3zt607wskM2ax9fxVQM7qRrsMxvepjss",
-            authDomain: "novascore-24ab5.firebaseapp.com",
-            projectId: "novascore-24ab5",
-            storageBucket: "novascore-24ab5.firebasestorage.app",
-            messagingSenderId: "504663563166",
-            appId: "1:504663563166:web:0fe795abfa02818d94948f"
+  authDomain: "novascore-24ab5.firebaseapp.com",
+  projectId: "novascore-24ab5",
+  storageBucket: "novascore-24ab5.firebasestorage.app",
+  messagingSenderId: "504663563166",
+  appId: "1:504663563166:web:0fe795abfa02818d94948f"
         };
         
         try {
-            if (typeof __firebase_config !== 'undefined') {
-                firebaseConfig = JSON.parse(__firebase_config);
-            }
+            if (typeof __firebase_config !== 'undefined') firebaseConfig = JSON.parse(__firebase_config);
         } catch(e) { console.warn("Usando config de Firebase por defecto."); }
 
         const app = initializeApp(firebaseConfig);
@@ -73,7 +68,7 @@
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'novabit-padel';
 
         // --- CONSTANTES GLOBALES ---
-        const MASTER_PIN = 'NOVA2026'; // CONTRASEÑA PARA ENTRAR AL CMS DE LA AGENCIA
+        const MASTER_PIN = 'NOVA2026';
         const POINTS = ['0', '15', '30', '40', 'Ad'];
         const THEMES = {
             pink: { name: 'MASTER (Rosa)', bg1: 'bg-pink-600', bg2: 'bg-indigo-600', text: 'text-pink-500', gradient: 'from-pink-500 to-indigo-500', border: 'border-pink-500', shadow: 'shadow-pink-500/20' },
@@ -92,7 +87,8 @@
             team2: { p1: 'JUGADOR 3', p2: 'JUGADOR 4', sets: [0, 0, 0], points: '0', tbPoints: 0 },
             server: 1, currentSet: 0, isTieBreak: false, tvAlert: '',
             timeLeft: 300, isTimerRunning: false, matchClock: 0, isMatchClockRunning: false,
-            sponsors: ["TORNEO PATROCINADO POR: RED BULL", "VISITA NUESTRO BAR PARA BEBIDAS FRÍAS"]
+            sponsors: ["TORNEO PATROCINADO POR: RED BULL", "VISITA NUESTRO BAR PARA BEBIDAS FRÍAS"],
+            matchHistory: [] // NUEVO: Arreglo de historial de partidos
         };
 
         const BackgroundFX = ({ activeView, themeKey }) => {
@@ -107,140 +103,126 @@
             );
         };
 
+        // --- CEREBRO INTELIGENTE DE ALERTAS (AUTO-DETECT) ---
+        const calculateAutoAlert = (state) => {
+            const { team1, team2, currentSet, isTieBreak, tournamentPhase } = state;
+            
+            // ¿Está a 1 punto de ganar el juego?
+            const is1PtAway = (pts, oppPts, tbPts, oppTbPts) => {
+                if (isTieBreak) return tbPts >= 6 && (tbPts - oppTbPts >= 1);
+                if (pts === '40' && oppPts === '40') return true; // Punto de oro
+                return (pts === '40' && oppPts !== 'Ad' && oppPts !== '40') || pts === 'Ad';
+            };
+
+            // ¿Está a 1 juego de ganar el Set?
+            const is1GameAway = (games, oppGames) => {
+                if (isTieBreak) return true; // En TB ganar el juego gana el set
+                return (games === 5 && oppGames <= 4) || (games === 6 && oppGames === 5);
+            };
+
+            const t1GamePt = is1PtAway(team1.points, team2.points, team1.tbPoints, team2.tbPoints);
+            const t2GamePt = is1PtAway(team2.points, team1.points, team2.tbPoints, team1.tbPoints);
+
+            const t1SetPt = t1GamePt && is1GameAway(team1.sets[currentSet], team2.sets[currentSet]);
+            const t2SetPt = t2GamePt && is1GameAway(team2.sets[currentSet], team1.sets[currentSet]);
+
+            // Calcular Sets Ganados (Mejor de 3)
+            let setsW1 = 0, setsW2 = 0;
+            for(let i=0; i<3; i++) {
+                if (i === currentSet) continue;
+                if (team1.sets[i] >= 6 && team1.sets[i] > team2.sets[i]) setsW1++;
+                if (team2.sets[i] >= 6 && team2.sets[i] > team1.sets[i]) setsW2++;
+            }
+
+            const t1MatchPt = t1SetPt && setsW1 === 1;
+            const t2MatchPt = t2SetPt && setsW2 === 1;
+
+            if (t1MatchPt || t2MatchPt) return tournamentPhase === 'Final' ? 'TOURNAMENT POINT' : 'MATCH POINT';
+            if (t1SetPt || t2SetPt) return 'SET POINT';
+            if (!isTieBreak && team1.points === '40' && team2.points === '40') return 'PUNTO DE ORO';
+            
+            return '';
+        };
+
         function App() {
-            // Estado de Autenticación
+            const bc = useRef(null);
             const [user, setUser] = useState(null);
-            const [authMode, setAuthMode] = useState('login'); // 'login', 'admin_cms', 'scoreboard'
+            const [authMode, setAuthMode] = useState('login');
             const [pinInput, setPinInput] = useState('');
             const [authError, setAuthError] = useState('');
-            
-            // Estado de Scoreboard y CMS
             const [activePin, setActivePin] = useState(null);
             const [gameState, setGameState] = useState(DEFAULT_GAME_STATE);
             const [globalSponsors, setGlobalSponsors] = useState([]);
-            const [tournamentsList, setTournamentsList] = useState([]);
-            
-            // UI Local
             const [showControls, setShowControls] = useState(false);
             const [isPublicMode, setIsPublicMode] = useState(false);
             const [currentSponsorIdx, setCurrentSponsorIdx] = useState(0);
             const [currentLogoIdx, setCurrentLogoIdx] = useState(0);
+            const [newTickerMsg, setNewTickerMsg] = useState('');
 
-            // Bloqueo de teclado
             useEffect(() => {
-                const block = (e) => {
-                    if(e.key === 'F12' || (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J')) || (e.ctrlKey && e.key === 'U')) e.preventDefault();
-                };
+                const block = (e) => { if(e.key === 'F12' || (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J')) || (e.ctrlKey && e.key === 'U')) e.preventDefault(); };
                 window.addEventListener('contextmenu', e => e.preventDefault());
                 window.addEventListener('keydown', block);
                 return () => { window.removeEventListener('contextmenu', e => e.preventDefault()); window.removeEventListener('keydown', block); };
             }, []);
 
-            // INICIALIZACIÓN DE FIREBASE (Regla 3: Auth First)
             useEffect(() => {
-                const initAuth = async () => {
-                    try {
-                        await signInAnonymously(auth);
-                    } catch (e) { console.error("Error Auth:", e); }
-                };
+                const initAuth = async () => { try { await signInAnonymously(auth); } catch (e) { console.error("Error Auth:", e); } };
                 initAuth();
-
                 const unsubscribe = onAuthStateChanged(auth, (u) => {
                     setUser(u);
-                    // Chequear si entra por URL de pantalla pública
                     const urlParams = new URLSearchParams(window.location.search);
                     const urlPin = urlParams.get('pin');
                     if (urlParams.get('display') === 'true') setIsPublicMode(true);
-                    
-                    if (urlPin && u) {
-                        validateAndLoadTournament(urlPin);
-                    }
+                    if (urlPin && u) validateAndLoadTournament(urlPin);
                 });
                 return () => unsubscribe();
             }, []);
 
-            // Suscripción Global Sponsors
             useEffect(() => {
                 if (!user) return;
                 const unsub = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'globalSponsors', 'main'), (docSnap) => {
-                    if (docSnap.exists()) {
-                        setGlobalSponsors(docSnap.data().logos || []);
-                    }
+                    if (docSnap.exists()) setGlobalSponsors(docSnap.data().logos || []);
                 });
                 return () => unsub();
             }, [user]);
 
-            // Función de Validación de PIN
             const validateAndLoadTournament = async (pinStr) => {
                 if (!user) return;
-                
-                if (pinStr === MASTER_PIN) {
-                    setAuthMode('admin_cms');
-                    return;
-                }
-
+                if (pinStr === MASTER_PIN) { setAuthMode('admin_cms'); return; }
                 try {
-                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'tournaments', pinStr);
-                    const docSnap = await getDoc(docRef);
-
+                    const docSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tournaments', pinStr));
                     if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        if (Date.now() > data.expiresAt) {
-                            setAuthError("Este código ha caducado.");
-                        } else {
-                            setActivePin(pinStr);
-                            setAuthMode('scoreboard');
-                        }
-                    } else {
-                        setAuthError("PIN Invalido o no existe.");
-                    }
-                } catch (error) {
-                    setAuthError("Error de conexión.");
-                }
+                        if (Date.now() > docSnap.data().expiresAt) setAuthError("Este código ha caducado.");
+                        else { setActivePin(pinStr); setAuthMode('scoreboard'); }
+                    } else setAuthError("PIN Invalido o no existe.");
+                } catch (error) { setAuthError("Error de conexión."); }
             };
 
-            const handleLoginSubmit = (e) => {
-                e.preventDefault();
-                setAuthError('');
-                validateAndLoadTournament(pinInput);
-            };
+            const handleLoginSubmit = (e) => { e.preventDefault(); setAuthError(''); validateAndLoadTournament(pinInput); };
 
-            // Suscripción de Estado de Juego
             useEffect(() => {
                 if (!user || authMode !== 'scoreboard' || !activePin) return;
                 const unsub = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', activePin), (docSnap) => {
-                    if (docSnap.exists()) {
-                        setGameState(docSnap.data().gameState);
-                    }
-                }, (err) => console.error(err));
+                    if (docSnap.exists()) setGameState(docSnap.data().gameState);
+                });
                 return () => unsub();
             }, [user, authMode, activePin]);
 
-            // Temporizadores Locales (Actualizan Firestore cada segundo para sincronía fina)
             useEffect(() => {
                 let intervalId = null;
                 if (authMode === 'scoreboard' && !isPublicMode && activePin && (gameState.isTimerRunning || gameState.isMatchClockRunning)) {
                     intervalId = setInterval(() => {
                         let updates = {};
-                        if (gameState.isTimerRunning && gameState.timeLeft > 0) {
-                            updates.timeLeft = gameState.timeLeft - 1;
-                        } else if (gameState.isTimerRunning && gameState.timeLeft <= 0) {
-                            updates.isTimerRunning = false;
-                        }
-
-                        if (gameState.isMatchClockRunning) {
-                            updates.matchClock = gameState.matchClock + 1;
-                        }
-                        
-                        if (Object.keys(updates).length > 0) {
-                            pushUpdate(updates);
-                        }
+                        if (gameState.isTimerRunning && gameState.timeLeft > 0) updates.timeLeft = gameState.timeLeft - 1;
+                        else if (gameState.isTimerRunning && gameState.timeLeft <= 0) updates.isTimerRunning = false;
+                        if (gameState.isMatchClockRunning) updates.matchClock = gameState.matchClock + 1;
+                        if (Object.keys(updates).length > 0) pushUpdate(updates);
                     }, 1000);
                 }
                 return () => clearInterval(intervalId);
             }, [gameState.isTimerRunning, gameState.isMatchClockRunning, gameState.timeLeft, gameState.matchClock, authMode, isPublicMode, activePin]);
 
-            // Rotaciones Visuales Locales
             useEffect(() => {
                 if (gameState.sponsors?.length > 0) {
                     const i = setInterval(() => setCurrentSponsorIdx(p => (p + 1) % gameState.sponsors.length), 5000);
@@ -255,19 +237,18 @@
                 }
             }, [gameState.activeView, globalSponsors.length]);
 
-            // Función Maestra de Update hacia la Base de Datos
             const pushUpdate = async (updates) => {
                 if (!activePin || isPublicMode) return;
-                const newState = { ...gameState, ...updates };
-                // Actualizamos estado local rápido
-                setGameState(newState);
-                // Subimos a Firebase (Debounce implícito por Firestore)
-                try {
-                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', activePin), { gameState: newState });
-                } catch (e) { console.error("Update fail:", e); }
+                const tempState = { ...gameState, ...updates };
+                // Autocalculamos las alertas si cambian los puntos
+                if (updates.team1 || updates.team2 || updates.isTieBreak || updates.currentSet) {
+                    const autoAlert = calculateAutoAlert(tempState);
+                    tempState.tvAlert = autoAlert; 
+                }
+                setGameState(tempState);
+                try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', activePin), { gameState: tempState }); } catch (e) { }
             };
 
-            // Helpers de Puntuación
             const handlePoints = (teamNum, direction) => {
                 const teamKey = teamNum === 1 ? 'team1' : 'team2';
                 const team = gameState[teamKey];
@@ -294,6 +275,45 @@
                 pushUpdate({ [teamKey]: { ...team, sets: newSets } });
             };
 
+            const addTickerMessage = () => {
+                if(!newTickerMsg.trim()) return;
+                pushUpdate({ sponsors: [...(gameState.sponsors || []), newTickerMsg.trim()] });
+                setNewTickerMsg('');
+            };
+
+            const removeTickerMessage = (idx) => {
+                const updated = [...(gameState.sponsors || [])];
+                updated.splice(idx, 1);
+                pushUpdate({ sponsors: updated });
+            };
+
+            // --- SISTEMA DE HISTORIAL DE PARTIDOS ---
+            const saveMatchAndReset = () => {
+                if (!window.confirm('¿Seguro que deseas GUARDAR ESTE PARTIDO y reiniciar el marcador a cero?')) return;
+                
+                const newMatch = {
+                    id: Date.now(),
+                    date: new Date().toLocaleDateString(),
+                    phase: gameState.tournamentPhase,
+                    category: gameState.category,
+                    team1: { p1: gameState.team1.p1, p2: gameState.team1.p2, sets: [...gameState.team1.sets] },
+                    team2: { p1: gameState.team2.p1, p2: gameState.team2.p2, sets: [...gameState.team2.sets] }
+                };
+
+                const updatedHistory = [newMatch, ...(gameState.matchHistory || [])];
+
+                pushUpdate({
+                    matchHistory: updatedHistory,
+                    team1: { ...gameState.team1, sets: [0,0,0], points: '0', tbPoints: 0 },
+                    team2: { ...gameState.team2, sets: [0,0,0], points: '0', tbPoints: 0 },
+                    currentSet: 0,
+                    isTieBreak: false,
+                    tvAlert: '',
+                    matchClock: 0,
+                    isMatchClockRunning: false
+                });
+            };
+
             const formatTime = (seconds, includeHours = false) => {
                 const h = Math.floor(seconds / 3600);
                 const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
@@ -302,11 +322,19 @@
                 return `${m}:${s}`;
             };
 
-            // --- VISTAS DEL SISTEMA ---
+            const getAlertConfig = (alertType) => {
+                switch(alertType) {
+                    case 'PUNTO DE ORO': return { bg: 'from-transparent via-yellow-600/80 to-transparent', border: 'border-yellow-400', text: 'text-yellow-400 animate-pulse drop-shadow-[0_0_10px_rgba(250,204,21,0.8)]' };
+                    case 'SET POINT': return { bg: 'from-transparent via-orange-600/80 to-transparent', border: 'border-orange-500', text: 'text-orange-400 animate-pulse drop-shadow-[0_0_10px_rgba(249,115,22,0.8)]' };
+                    case 'MATCH POINT': return { bg: 'from-transparent via-red-600/80 to-transparent', border: 'border-red-500', text: 'text-red-400 animate-pulse drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]' };
+                    case 'TOURNAMENT POINT': return { bg: 'from-transparent via-amber-600/90 to-transparent', border: 'border-amber-300 shadow-[0_0_30px_rgba(251,191,36,0.6)]', text: 'bg-clip-text text-transparent bg-gradient-to-r from-yellow-200 via-amber-400 to-yellow-200 animate-tournament-point text-3xl' };
+                    default: return { bg: 'from-transparent via-gray-600/80 to-transparent', border: 'border-gray-500', text: 'text-white' };
+                }
+            };
 
             if (authMode === 'login') {
                 return (
-                    <div className="min-h-screen flex items-center justify-center relative">
+                    <div className="h-screen overflow-y-auto custom-scrollbar flex items-center justify-center relative">
                         <BackgroundFX activeView="scoreboard" themeKey="pink" />
                         <div className="z-10 bg-black/60 backdrop-blur-2xl p-10 rounded-2xl border border-white/10 shadow-[0_0_50px_rgba(219,39,119,0.3)] w-full max-w-md text-center text-white">
                             <div className="mx-auto w-20 h-20 bg-pink-600/20 rounded-full flex items-center justify-center mb-6 border border-pink-500/50">
@@ -314,7 +342,6 @@
                             </div>
                             <h1 className="text-2xl font-black tracking-widest uppercase mb-2">Acceso al Sistema</h1>
                             <p className="text-gray-400 text-sm tracking-wider mb-8">INTRODUZCA SU PIN DE TORNEO</p>
-                            
                             <form onSubmit={handleLoginSubmit} className="space-y-6">
                                 <div>
                                     <div className="relative">
@@ -327,20 +354,15 @@
                             </form>
                         </div>
                         <div className="absolute bottom-8 flex flex-col items-center opacity-50 text-white">
-                            <img src="https://i.imgur.com/FnYqHyv.png" alt="NovaBit" className="h-10 mb-2 object-contain" />
+                            <img src="https://i.imgur.com/FnYqHyv.png" className="h-10 mb-2 object-contain" />
                             <span className="text-[9px] font-bold tracking-[0.2em] uppercase">Powered by NovaBit Media Agency</span>
-                            <span className="text-[7px] text-gray-400 tracking-[0.2em] uppercase mt-1">Todos los derechos reservados</span>
                         </div>
                     </div>
                 );
             }
 
-            // --- VISTA CMS (PANEL DE AGENCIA) ---
-            if (authMode === 'admin_cms') {
-                return <AdminCMS db={db} user={user} appId={appId} setAuthMode={setAuthMode} globalSponsors={globalSponsors} />;
-            }
+            if (authMode === 'admin_cms') return <AdminCMS db={db} user={user} appId={appId} setAuthMode={setAuthMode} globalSponsors={globalSponsors} />;
 
-            // --- VISTA PRINCIPAL (SCOREBOARD OPERATOR / DISPLAY) ---
             const activeTheme = THEMES[gameState.theme] || THEMES.pink;
 
             return (
@@ -353,13 +375,11 @@
                         </button>
                     )}
 
-                    {/* MENÚ DE CONTROL LATERAL */}
+                    {/* MENÚ OPERADOR LATERAL */}
                     {!isPublicMode && (
                         <div className={`fixed right-0 top-0 h-full w-[450px] bg-gray-900/95 backdrop-blur-xl border-l border-white/10 z-50 transform transition-transform duration-500 ease-in-out ${showControls ? 'translate-x-0' : 'translate-x-full'} shadow-2xl flex flex-col`} onContextMenu={(e) => e.stopPropagation()}>
                             <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/80">
-                                <h2 className={`text-xl font-black tracking-widest ${activeTheme.text} flex items-center gap-2`}>
-                                    <i className="fa-solid fa-gamepad text-[20px]"></i> OPERADOR
-                                </h2>
+                                <h2 className={`text-xl font-black tracking-widest ${activeTheme.text} flex items-center gap-2`}><i className="fa-solid fa-gamepad"></i> OPERADOR</h2>
                                 <div className="flex gap-4 items-center">
                                     <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-1 rounded border border-green-500/30">PIN: {activePin}</span>
                                     <button onClick={() => setShowControls(false)} className="text-gray-400 hover:text-white"><i className="fa-solid fa-xmark text-[24px]"></i></button>
@@ -367,89 +387,37 @@
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-5 space-y-6 text-sm custom-scrollbar">
-                                {/* Botón Pantalla 2 */}
                                 <button onClick={() => window.open(`${window.location.pathname}?pin=${activePin}&display=true`, 'PantallaTV', 'width=1280,height=720')} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded font-bold flex items-center justify-center gap-2 transition-colors shadow-lg shadow-indigo-500/20">
-                                    <i className="fa-solid fa-tv text-[16px]"></i> LANZAR PANTALLA PÚBLICA (TV)
+                                    <i className="fa-solid fa-tv"></i> LANZAR PANTALLA PÚBLICA (TV)
                                 </button>
                                 
                                 <div className="bg-white/5 border border-white/10 rounded-lg p-3 space-y-3">
                                     <div className="grid grid-cols-3 gap-2">
-                                        <div className="space-y-1">
-                                            <label className="text-gray-400 font-bold text-[9px] uppercase"><i className="fa-solid fa-venus-mars"></i> CATEGORÍA</label>
-                                            <select value={gameState.category} onChange={e => pushUpdate({category: e.target.value})} className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full">
-                                                <option value="MASCULINO">MASCULINO</option><option value="FEMENINO">FEMENINO</option><option value="MIXTO">MIXTO</option>
-                                            </select>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-gray-400 font-bold text-[9px] uppercase"><i className="fa-solid fa-palette"></i> TEMA</label>
-                                            <select value={gameState.theme} onChange={e => pushUpdate({theme: e.target.value})} className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full">
-                                                {Object.entries(THEMES).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-gray-400 font-bold text-[9px] uppercase"><i className="fa-solid fa-sitemap"></i> FASE</label>
-                                            <select value={gameState.tournamentPhase} onChange={e => pushUpdate({tournamentPhase: e.target.value})} className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full">
-                                                {TOURNAMENT_PHASES.map(f => <option key={f} value={f}>{f}</option>)}
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="space-y-1 pt-2 border-t border-white/10">
-                                        <label className="text-gray-400 font-bold text-[10px] uppercase"><i className="fa-regular fa-image"></i> LOGO TORNEO URL</label>
-                                        <input type="text" value={gameState.tournamentLogo} onChange={e => pushUpdate({tournamentLogo: e.target.value})} className="w-full bg-black/50 border border-white/20 text-white text-xs rounded px-2 py-1.5" />
+                                        <div className="space-y-1"><label className="text-gray-400 font-bold text-[9px] uppercase">CATEGORÍA</label><select value={gameState.category} onChange={e => pushUpdate({category: e.target.value})} className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full"><option value="MASCULINO">MASCULINO</option><option value="FEMENINO">FEMENINO</option><option value="MIXTO">MIXTO</option></select></div>
+                                        <div className="space-y-1"><label className="text-gray-400 font-bold text-[9px] uppercase">TEMA</label><select value={gameState.theme} onChange={e => pushUpdate({theme: e.target.value})} className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full">{Object.entries(THEMES).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}</select></div>
+                                        <div className="space-y-1"><label className="text-gray-400 font-bold text-[9px] uppercase">FASE</label><select value={gameState.tournamentPhase} onChange={e => pushUpdate({tournamentPhase: e.target.value})} className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full">{TOURNAMENT_PHASES.map(f => <option key={f} value={f}>{f}</option>)}</select></div>
                                     </div>
                                 </div>
 
-                                {/* Cambio de Vistas */}
+                                {/* Control de Vistas */}
                                 <div className="space-y-2">
-                                    <label className="text-gray-400 font-bold tracking-wider text-xs uppercase">CONTROL DE PANTALLA</label>
-                                    <div className="grid grid-cols-4 gap-2">
-                                        {[{ id: 'scoreboard', icon: 'fa-desktop', label: 'MARCADOR' }, { id: 'warmup', icon: 'fa-fire', label: 'CALENTAR' }, { id: 'halftime', icon: 'fa-mug-hot', label: 'DESCANSO' }, { id: 'sponsor_full', icon: 'fa-bolt', label: 'SPONSOR' }].map(v => (
-                                            <button key={v.id} onClick={() => pushUpdate({activeView: v.id})} className={`py-2 rounded border font-bold flex flex-col items-center gap-1 transition-all text-[10px] ${gameState.activeView === v.id ? 'bg-white text-black border-white' : 'border-white/10 text-gray-400 hover:bg-white/5'}`}>
-                                                <i className={`fa-solid ${v.icon} text-[14px]`}></i> {v.label}
+                                    <label className="text-gray-400 font-bold tracking-wider text-xs uppercase">CONTROL DE PANTALLA TV</label>
+                                    <div className="grid grid-cols-5 gap-1.5">
+                                        {[{ id: 'scoreboard', icon: 'fa-desktop', label: 'SCORE' }, { id: 'warmup', icon: 'fa-fire', label: 'CALENT.' }, { id: 'halftime', icon: 'fa-mug-hot', label: 'DESC.' }, { id: 'sponsor_full', icon: 'fa-bolt', label: 'SPONS' }, { id: 'history', icon: 'fa-list-ul', label: 'HIST.' }].map(v => (
+                                            <button key={v.id} onClick={() => pushUpdate({activeView: v.id})} className={`py-2 rounded border font-bold flex flex-col items-center gap-1 transition-all text-[9px] ${gameState.activeView === v.id ? 'bg-white text-black border-white' : 'border-white/10 text-gray-400 hover:bg-white/5'}`}>
+                                                <i className={`fa-solid ${v.icon} text-[12px]`}></i> {v.label}
                                             </button>
                                         ))}
                                     </div>
                                 </div>
 
-                                {/* Alertas y Tiempos */}
-                                <div className="bg-black/40 p-3 rounded-lg border border-white/5 space-y-3">
-                                    <div className="flex justify-between items-center border-b border-white/10 pb-2">
-                                        <label className="text-gray-400 font-bold text-xs uppercase"><i className="fa-solid fa-triangle-exclamation"></i> ALERTAS TV</label>
-                                        <button onClick={() => pushUpdate({tvAlert: ''})} className="text-[10px] bg-red-500/20 text-red-400 px-2 py-1 rounded">LIMPIAR</button>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {['PUNTO DE ORO', 'SET POINT', 'MATCH POINT', 'TOURNAMENT POINT'].map(alert => (
-                                            <button key={alert} onClick={() => pushUpdate({tvAlert: alert})} className={`py-2 text-[10px] font-bold rounded border ${gameState.tvAlert === alert ? (alert === 'TOURNAMENT POINT' ? 'bg-amber-600 text-white border-amber-400' : 'bg-white text-black border-white') : 'bg-gray-800 text-gray-400 border-gray-700'}`}>{alert}</button>
-                                        ))}
-                                    </div>
-                                    
-                                    <div className="flex justify-between items-center pt-2 border-t border-white/10">
-                                        <label className="text-gray-400 font-bold text-xs uppercase"><i className="fa-solid fa-stopwatch"></i> TIEMPO PARTIDO</label>
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-mono font-bold">{formatTime(gameState.matchClock, true)}</span>
-                                            <button onClick={() => pushUpdate({isMatchClockRunning: !gameState.isMatchClockRunning})} className={`px-2 py-1 rounded text-[10px] font-bold ${gameState.isMatchClockRunning ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>{gameState.isMatchClockRunning ? 'PAUSAR' : 'INICIAR'}</button>
-                                        </div>
-                                    </div>
-
-                                    <div className="pt-2 border-t border-white/10 space-y-2">
-                                        <label className="text-gray-400 font-bold text-xs uppercase"><i className="fa-solid fa-hourglass-half"></i> RELOJ CALENTAMIENTO/DESCANSO</label>
-                                        <div className="flex justify-between items-center bg-black/50 p-2 rounded">
-                                            <span className="font-mono font-bold text-xl">{formatTime(gameState.timeLeft)}</span>
-                                            <div className="flex gap-1">
-                                                <button onClick={() => pushUpdate({timeLeft: Math.max(0, gameState.timeLeft - 60)})} className="px-2 py-1 bg-gray-700 rounded text-xs">-1m</button>
-                                                <button onClick={() => pushUpdate({timeLeft: gameState.timeLeft + 60})} className="px-2 py-1 bg-gray-700 rounded text-xs">+1m</button>
-                                                <button onClick={() => pushUpdate({timeLeft: 300, isTimerRunning: false})} className="px-2 py-1 bg-gray-700 border border-white/20 rounded text-xs">5m</button>
-                                                <button onClick={() => pushUpdate({isTimerRunning: !gameState.isTimerRunning})} className={`px-3 py-1 rounded text-xs font-bold ${gameState.isTimerRunning ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>{gameState.isTimerRunning ? 'PAUSA' : 'PLAY'}</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Puntuaciones */}
-                                <div className={`space-y-4 transition-opacity ${gameState.activeView !== 'scoreboard' ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
+                                <div className={`space-y-4 transition-opacity ${gameState.activeView !== 'scoreboard' ? 'opacity-40' : 'opacity-100'}`}>
                                     <div className="flex justify-between items-center border-b border-white/10 pb-2">
                                         <label className="text-gray-400 font-bold text-xs uppercase">PUNTOS Y SETS</label>
-                                        <button onClick={() => pushUpdate({isTieBreak: !gameState.isTieBreak})} className={`text-xs px-3 py-1 rounded font-bold border transition-all ${gameState.isTieBreak ? 'bg-red-600 border-red-500 text-white animate-pulse' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>MODO TIE-BREAK</button>
+                                        <div className="flex gap-2">
+                                            <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-1 rounded border border-green-500/30 flex items-center gap-1"><i className="fa-solid fa-robot"></i> AUTO-ALERTS ON</span>
+                                            <button onClick={() => pushUpdate({isTieBreak: !gameState.isTieBreak})} className={`text-xs px-3 py-1 rounded font-bold border transition-all ${gameState.isTieBreak ? 'bg-red-600 border-red-500 text-white animate-pulse' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>MODO TIE-BREAK</button>
+                                        </div>
                                     </div>
                                     
                                     {[1, 2].map((num) => {
@@ -460,25 +428,24 @@
                                                 {gameState.server === num && <div className="absolute top-0 left-0 w-1 h-full bg-yellow-400"></div>}
                                                 <div className="flex items-start gap-2 pl-2">
                                                     <div className="flex-1 space-y-1">
-                                                        <input type="text" value={team.p1} onChange={e => pushUpdate({ [teamKey]: { ...team, p1: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full px-2 py-1 text-xs uppercase rounded" placeholder="Jugador 1"/>
-                                                        <input type="text" value={team.p2} onChange={e => pushUpdate({ [teamKey]: { ...team, p2: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full px-2 py-1 text-xs uppercase rounded" placeholder="Jugador 2"/>
+                                                        <input type="text" value={team.p1} onChange={e => pushUpdate({ [teamKey]: { ...team, p1: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full px-2 py-1 text-xs uppercase rounded"/>
+                                                        <input type="text" value={team.p2} onChange={e => pushUpdate({ [teamKey]: { ...team, p2: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full px-2 py-1 text-xs uppercase rounded"/>
                                                     </div>
                                                     <button onClick={() => pushUpdate({server: num})} className={`text-[10px] px-2 py-2 rounded font-bold shrink-0 h-full ${gameState.server === num ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-400'}`}>SAQUE</button>
                                                 </div>
-                                                
                                                 <div className="grid grid-cols-2 gap-3 pl-2">
                                                     <div className="bg-white/5 p-2 rounded text-center">
                                                         <span className={`text-xs block mb-1 font-bold ${gameState.isTieBreak ? 'text-red-400' : 'text-gray-400'}`}>Pts ({gameState.isTieBreak ? team.tbPoints : team.points})</span>
                                                         <div className="flex gap-1">
-                                                            <button onClick={() => handlePoints(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-minus text-[12px]"></i></button>
-                                                            <button onClick={() => handlePoints(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-plus text-[12px]"></i></button>
+                                                            <button onClick={() => handlePoints(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-minus"></i></button>
+                                                            <button onClick={() => handlePoints(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-plus"></i></button>
                                                         </div>
                                                     </div>
                                                     <div className="bg-white/5 p-2 rounded text-center">
                                                         <span className="text-gray-400 text-xs block mb-1 font-bold">Set {gameState.currentSet + 1} ({team.sets[gameState.currentSet]})</span>
                                                         <div className="flex gap-1">
-                                                            <button onClick={() => updateGames(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-minus text-[12px]"></i></button>
-                                                            <button onClick={() => updateGames(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-plus text-[12px]"></i></button>
+                                                            <button onClick={() => updateGames(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-minus"></i></button>
+                                                            <button onClick={() => updateGames(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-plus"></i></button>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -486,78 +453,79 @@
                                         )
                                     })}
                                     <div className="flex gap-1">
-                                        {[0, 1, 2].map(s => (
-                                            <button key={s} onClick={() => pushUpdate({currentSet: s})} className={`flex-1 py-1.5 text-xs font-bold rounded ${gameState.currentSet === s ? 'bg-white text-black' : 'bg-gray-800 text-gray-400'}`}>SET {s + 1}</button>
+                                        {[0, 1, 2].map(s => <button key={s} onClick={() => pushUpdate({currentSet: s})} className={`flex-1 py-1.5 text-xs font-bold rounded ${gameState.currentSet === s ? 'bg-white text-black' : 'bg-gray-800 text-gray-400'}`}>SET {s + 1}</button>)}
+                                    </div>
+                                </div>
+
+                                {/* MENSAJES BARRA INFERIOR (TICKER) */}
+                                <div className={`bg-black/40 p-3 rounded-lg border border-white/5 space-y-3 transition-opacity ${gameState.activeView === 'sponsor_full' ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
+                                    <div className="flex justify-between items-center border-b border-white/10 pb-2">
+                                        <label className="text-gray-400 font-bold text-xs uppercase"><i className="fa-solid fa-bullhorn"></i> MENSAJES BARRA INFERIOR</label>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <input type="text" value={newTickerMsg} onChange={e => setNewTickerMsg(e.target.value)} placeholder="Ej: Cantina abierta..." className="flex-1 bg-black/50 border border-white/20 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:border-white" />
+                                        <button onClick={addTickerMessage} className="bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 rounded font-bold text-[10px] transition-colors">AÑADIR</button>
+                                    </div>
+                                    <div className="space-y-1 max-h-32 overflow-y-auto custom-scrollbar pr-1">
+                                        {(gameState.sponsors || []).length === 0 && <p className="text-[10px] text-gray-500 italic">No hay mensajes configurados.</p>}
+                                        {(gameState.sponsors || []).map((msg, idx) => (
+                                            <div key={idx} className="flex items-center justify-between bg-black/40 px-2 py-1.5 rounded text-[10px] border border-white/5">
+                                                <span className="truncate text-gray-300 flex-1 mr-2">{msg}</span>
+                                                <button onClick={() => removeTickerMessage(idx)} className="text-red-400 hover:text-red-300 px-2 py-1"><i className="fa-solid fa-trash"></i></button>
+                                            </div>
                                         ))}
                                     </div>
                                 </div>
-                                <div className="text-center opacity-50 pt-4">
-                                    <img src="https://i.imgur.com/FnYqHyv.png" alt="NovaBit" className="h-6 mx-auto mb-1 object-contain" />
-                                    <p className="text-[7px] uppercase tracking-widest">NovaBit Media Agency</p>
-                                </div>
+
+                                {/* GUARDAR PARTIDO */}
+                                <button onClick={saveMatchAndReset} className="w-full py-4 bg-red-600 hover:bg-red-500 rounded-lg font-black text-white tracking-widest shadow-lg shadow-red-500/20 border border-red-400/50 uppercase transition-all hover:scale-[1.02]">
+                                    <i className="fa-solid fa-floppy-disk mr-2"></i> Finalizar y Guardar Partido
+                                </button>
+                                
                             </div>
                         </div>
                     )}
 
-                    {/* VISTAS PÚBLICAS (MARCADOR / CALENTAMIENTO / SPONSOR) */}
+                    {/* VISTAS PÚBLICAS PANTALLA TV */}
                     <div className="relative w-full h-screen flex flex-col justify-center items-center z-10 px-8 pb-14">
                         
                         {/* 1. SCOREBOARD */}
                         <div className={`w-full max-w-6xl transition-all duration-700 absolute flex flex-col justify-center ${gameState.activeView === 'scoreboard' ? 'opacity-100 scale-100 z-10' : 'opacity-0 scale-95 pointer-events-none z-0'}`}>
-                            {/* HEADER */}
                             <div className="mb-6 flex justify-between items-end border-b border-white/20 pb-4 relative">
                                 <div className="flex items-center gap-4">
-                                    {gameState.tournamentLogo ? (
-                                        <img src={gameState.tournamentLogo} className="h-16 w-16 object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]" />
-                                    ) : (
-                                        <i className={`fa-solid fa-trophy text-[40px] ${activeTheme.text}`}></i>
-                                    )}
+                                    {gameState.tournamentLogo ? <img src={gameState.tournamentLogo} className="h-16 w-16 object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]" /> : <i className={`fa-solid fa-trophy text-[40px] ${activeTheme.text}`}></i>}
                                     <div>
-                                        <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase mb-1">
-                                            <span className={`bg-clip-text text-transparent bg-gradient-to-r ${activeTheme.gradient}`}>{activeTheme.name.split(' ')[0]}</span>
-                                        </h1>
+                                        <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase mb-1"><span className={`bg-clip-text text-transparent bg-gradient-to-r ${activeTheme.gradient}`}>{activeTheme.name.split(' ')[0]}</span></h1>
                                         <p className="text-gray-400 tracking-[0.3em] font-bold text-sm uppercase">PISTA CENTRAL <span className="mx-2">•</span> {gameState.tournamentPhase}</p>
                                     </div>
                                 </div>
-                                
                                 <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
                                     <span className="text-[10px] text-gray-500 font-bold tracking-[0.4em] uppercase mb-1">TIEMPO MATCH</span>
-                                    <div className="bg-black/60 backdrop-blur-md border border-white/10 px-6 py-1 rounded-full text-white font-mono font-bold text-xl tracking-widest shadow-inner">
-                                        {formatTime(gameState.matchClock, true)}
-                                    </div>
+                                    <div className="bg-black/60 backdrop-blur-md border border-white/10 px-6 py-1 rounded-full text-white font-mono font-bold text-xl tracking-widest shadow-inner">{formatTime(gameState.matchClock, true)}</div>
                                 </div>
-
                                 <div className="text-right">
-                                    <div className={`inline-block border border-white/20 px-6 py-2 bg-white/5 backdrop-blur-md font-bold tracking-widest text-sm ${activeTheme.text} ${activeTheme.shadow}`}>
-                                        {gameState.category}
-                                    </div>
+                                    <div className={`inline-block border border-white/20 px-6 py-2 bg-white/5 backdrop-blur-md font-bold tracking-widest text-sm ${activeTheme.text} ${activeTheme.shadow}`}>{gameState.category}</div>
                                 </div>
                             </div>
 
-                            {/* ALERTAS TV */}
+                            {/* ALERTAS TV AUTOMÁTICAS */}
                             <div className={`w-full overflow-hidden transition-all duration-500 ease-out flex justify-center ${gameState.tvAlert ? 'max-h-24 mb-4 opacity-100' : 'max-h-0 opacity-0 mb-0'}`}>
                                 {gameState.tvAlert && (() => {
                                     const a = gameState.tvAlert;
-                                    let bg = 'from-transparent via-gray-600/80 to-transparent', b = 'border-gray-500', t = 'text-white';
-                                    if(a === 'PUNTO DE ORO') { bg = 'from-transparent via-yellow-600/80 to-transparent'; b = 'border-yellow-400'; t = 'text-yellow-400 animate-pulse drop-shadow-[0_0_10px_rgba(250,204,21,0.8)]'; }
-                                    if(a === 'SET POINT') { bg = 'from-transparent via-orange-600/80 to-transparent'; b = 'border-orange-500'; t = 'text-orange-400 animate-pulse drop-shadow-[0_0_10px_rgba(249,115,22,0.8)]'; }
-                                    if(a === 'MATCH POINT') { bg = 'from-transparent via-red-600/80 to-transparent'; b = 'border-red-500'; t = 'text-red-400 animate-pulse drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]'; }
-                                    if(a === 'TOURNAMENT POINT') { bg = 'from-transparent via-amber-600/90 to-transparent'; b = 'border-amber-300 shadow-[0_0_30px_rgba(251,191,36,0.6)]'; t = 'bg-clip-text text-transparent bg-gradient-to-r from-yellow-200 via-amber-400 to-yellow-200 animate-tournament-point text-3xl'; }
+                                    const { bg, border, text } = getAlertConfig(a);
                                     return (
-                                        <div className={`w-full text-center py-2 border-y ${b} bg-gradient-to-r ${bg}`}>
-                                            <span className={`font-black tracking-[0.5em] text-2xl uppercase ${t}`}>{a}</span>
+                                        <div className={`w-full text-center py-2 border-y ${border} bg-gradient-to-r ${bg}`}>
+                                            <span className={`font-black tracking-[0.5em] text-2xl uppercase ${text}`}>{a}</span>
                                         </div>
                                     )
                                 })()}
                             </div>
 
-                            {/* TABLA PRINCIPAL */}
                             <div className="border border-white/10 bg-black/50 backdrop-blur-2xl rounded-xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
                                 <div className="grid grid-cols-[1fr_auto_auto_auto_130px] gap-1 border-b border-white/10 bg-black/60 text-gray-500 text-xs font-bold tracking-[0.2em] p-2 pr-4 text-center items-center">
                                     <div className="text-left pl-14">JUGADORES</div><div className="w-16">1</div><div className="w-16">2</div><div className="w-16">3</div>
                                     <div className={gameState.isTieBreak ? 'text-red-500 animate-pulse' : activeTheme.text}>{gameState.isTieBreak ? 'TIE BREAK' : 'PTS'}</div>
                                 </div>
-
                                 {[1, 2].map(num => {
                                     const team = num === 1 ? gameState.team1 : gameState.team2;
                                     const other = num === 1 ? gameState.team2 : gameState.team1;
@@ -600,7 +568,7 @@
                             </div>
                         </div>
 
-                        {/* 3. SPONSOR FULL (CON GLOBAL SPONSORS DE FIREBASE) */}
+                        {/* 3. SPONSOR FULL */}
                         <div className={`w-full h-full transition-all duration-700 absolute flex items-center justify-center ${gameState.activeView === 'sponsor_full' ? 'opacity-100 scale-100 z-20' : 'opacity-0 scale-95 pointer-events-none z-0'}`}>
                             <div className="text-center space-y-12 w-full max-w-5xl p-20 bg-black/60 backdrop-blur-2xl border border-white/10 rounded-3xl relative overflow-hidden shadow-2xl">
                                 <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${activeTheme.gradient}`}></div>
@@ -610,14 +578,39 @@
                                         globalSponsors.map((url, idx) => (
                                             <img key={idx} src={url} className={`absolute max-w-full max-h-full object-contain transition-opacity duration-1000 ${idx === currentLogoIdx ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`} />
                                         ))
-                                    ) : (
-                                        <div className="text-5xl md:text-7xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white via-gray-200 to-gray-600 opacity-30">
-                                            AGENCIA NOVABIT
-                                        </div>
-                                    )}
+                                    ) : <div className="text-5xl md:text-7xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white via-gray-200 to-gray-600 opacity-30">AGENCIA NOVABIT</div>}
                                 </div>
                             </div>
                         </div>
+
+                        {/* 4. HISTORIAL DE PARTIDOS (NUEVA PANTALLA) */}
+                        <div className={`w-full max-w-5xl transition-all duration-700 absolute flex flex-col justify-start pt-10 h-full ${gameState.activeView === 'history' ? 'opacity-100 scale-100 z-20' : 'opacity-0 scale-95 pointer-events-none z-0'}`}>
+                            <div className={`mb-8 border-b-4 ${activeTheme.border} pb-2 text-center`}>
+                                <h2 className="text-4xl font-black tracking-[0.3em] text-white uppercase">Historial del Torneo</h2>
+                            </div>
+                            <div className="space-y-4 overflow-y-auto custom-scrollbar pr-4 pb-20">
+                                {gameState.matchHistory && gameState.matchHistory.length > 0 ? gameState.matchHistory.slice(0, 5).map((match, i) => (
+                                    <div key={i} className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl p-4 shadow-xl flex items-center justify-between">
+                                        <div className="flex-1 space-y-3">
+                                            <div className="flex gap-3 text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                                                <span className={`${activeTheme.text}`}>{match.category}</span> | <span>{match.phase}</span> | <span>{match.date}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center bg-white/5 p-3 rounded">
+                                                <span className="font-bold text-lg">{match.team1.p1} / {match.team1.p2}</span>
+                                                <div className="flex gap-2">{match.team1.sets.map((s, idx) => <span key={idx} className="w-8 text-center font-black text-xl">{s}</span>)}</div>
+                                            </div>
+                                            <div className="flex justify-between items-center bg-white/5 p-3 rounded">
+                                                <span className="font-bold text-lg">{match.team2.p1} / {match.team2.p2}</span>
+                                                <div className="flex gap-2">{match.team2.sets.map((s, idx) => <span key={idx} className="w-8 text-center font-black text-xl">{s}</span>)}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )) : (
+                                    <div className="text-center py-20 text-gray-500 font-bold tracking-widest uppercase text-xl">Aún no hay partidos registrados</div>
+                                )}
+                            </div>
+                        </div>
+
                     </div>
 
                     {/* BANNER INFERIOR DINÁMICO */}
@@ -634,10 +627,9 @@
                                 <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div> EN DIRECTO
                             </div>
                             <div className="hidden md:flex items-center gap-3 border-l border-white/20 pl-6 opacity-60">
-                                <img src="https://i.imgur.com/FnYqHyv.png" alt="NovaBit" className="h-6 object-contain" />
+                                <img src="https://i.imgur.com/FnYqHyv.png" className="h-6 object-contain" />
                                 <div className="flex flex-col justify-center">
                                     <span className="text-[8px] text-gray-300 font-bold tracking-[0.2em] uppercase leading-tight mb-0.5">Powered by NovaBit Media Agency</span>
-                                    <span className="text-[6px] text-gray-500 tracking-[0.2em] uppercase leading-tight">Todos los Derechos Reservados</span>
                                 </div>
                             </div>
                         </div>
@@ -651,8 +643,9 @@
             const [tournaments, setTournaments] = useState([]);
             const [clientName, setClientName] = useState('');
             const [daysValid, setDaysValid] = useState(1);
+            const [customLogo, setCustomLogo] = useState('');
             const [newLogoUrl, setNewLogoUrl] = useState('');
-            const [customLogo, setCustomLogo] = useState(''); // NUEVO: Estado para el logo predefinido
+            const [lastGeneratedPin, setLastGeneratedPin] = useState(null);
 
             useEffect(() => {
                 const unsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'tournaments'), (snap) => {
@@ -668,18 +661,14 @@
                 e.preventDefault();
                 if(!clientName) return;
                 const pin = generatePin();
-                const expiresAt = Date.now() + (daysValid * 24 * 60 * 60 * 1000); // Ms
-                
+                const expiresAt = Date.now() + (daysValid * 24 * 60 * 60 * 1000); 
                 try {
-                    // Crea PIN en db
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tournaments', pin), { pin, clientName, expiresAt, createdAt: Date.now() });
-                    
-                    // Crea el State Base inyectando el logo predefinido
                     const initialState = { ...DEFAULT_GAME_STATE, tournamentLogo: customLogo };
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', pin), { gameState: initialState });
-                    
-                    setClientName('');
-                    setCustomLogo(''); // Limpia el campo
+                    setLastGeneratedPin({ pin, clientName });
+                    setClientName(''); setCustomLogo(''); 
+                    setTimeout(() => setLastGeneratedPin(null), 20000);
                 } catch(e) { console.error("Error creando:", e); }
             };
 
@@ -703,7 +692,7 @@
             };
 
             return (
-                <div className="min-h-screen bg-gray-900 text-white p-8 font-sans">
+                <div className="h-screen overflow-y-auto custom-scrollbar bg-gray-900 text-white p-8 font-sans">
                     <div className="max-w-6xl mx-auto space-y-8">
                         <div className="flex justify-between items-center border-b border-white/10 pb-4">
                             <div className="flex items-center gap-4">
@@ -719,10 +708,7 @@
                                 <h2 className="text-xl font-bold tracking-widest uppercase border-b border-white/10 pb-2"><i className="fa-solid fa-key text-pink-500"></i> Generar Licencia</h2>
                                 <form onSubmit={handleCreateTournament} className="space-y-4">
                                     <div><label className="text-xs text-gray-400 font-bold">NOMBRE DEL CLIENTE/TORNEO</label><input type="text" value={clientName} onChange={e=>setClientName(e.target.value)} className="w-full bg-black/50 border border-white/20 rounded p-3 text-white mt-1" required/></div>
-                                    
-                                    {/* NUEVO CAMPO: Logo predefinido desde el CMS */}
                                     <div><label className="text-xs text-gray-400 font-bold">LOGO DEL TORNEO (URL OPCIONAL)</label><input type="text" value={customLogo} onChange={e=>setCustomLogo(e.target.value)} placeholder="https://..." className="w-full bg-black/50 border border-white/20 rounded p-3 text-white mt-1"/></div>
-                                    
                                     <div>
                                         <label className="text-xs text-gray-400 font-bold">DURACIÓN DEL SERVICIO</label>
                                         <select value={daysValid} onChange={e=>setDaysValid(Number(e.target.value))} className="w-full bg-black/50 border border-white/20 rounded p-3 text-white mt-1">
@@ -731,14 +717,21 @@
                                     </div>
                                     <button type="submit" className="w-full bg-pink-600 hover:bg-pink-500 text-white font-bold py-3 rounded tracking-widest uppercase">GENERAR PIN DE ACCESO</button>
                                 </form>
+
+                                {/* BANNER DE ÉXITO MOSTRANDO EL PIN */}
+                                {lastGeneratedPin && (
+                                    <div className="mt-4 bg-green-500/10 border border-green-500/30 rounded-lg p-4 text-center animate-pulse">
+                                        <div className="text-green-400 text-xs font-bold tracking-widest uppercase mb-2"><i className="fa-solid fa-circle-check"></i> Licencia Generada Exitosamente</div>
+                                        <div className="text-gray-300 text-sm font-bold uppercase">{lastGeneratedPin.clientName}</div>
+                                        <div className="text-5xl font-mono font-black text-white tracking-widest py-3">{lastGeneratedPin.pin}</div>
+                                        <div className="text-[10px] text-gray-400 uppercase tracking-widest">Copia este PIN y entrégaselo a tu cliente</div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* SPONSORS GLOBALES */}
                             <div className="bg-black/40 p-6 rounded-xl border border-white/5 space-y-6">
                                 <h2 className="text-xl font-bold tracking-widest uppercase border-b border-white/10 pb-2"><i className="fa-solid fa-images text-cyan-500"></i> Pantalla Sponsors Globales</h2>
-                                <div className="bg-blue-900/20 border border-blue-500/30 p-3 rounded text-xs text-blue-200">
-                                    <i className="fa-solid fa-circle-info"></i> <b>Tip Drive:</b> Si usas Google Drive, asegúrate que la imagen sea "Pública" y extrae el ID. El link debe ser: <br/><code className="text-pink-400">https://drive.google.com/uc?export=view&id=ID_AQUI</code>
-                                </div>
                                 <div className="flex gap-2">
                                     <input type="text" value={newLogoUrl} onChange={e=>setNewLogoUrl(e.target.value)} placeholder="URL de la imagen..." className="flex-1 bg-black/50 border border-white/20 rounded px-3" />
                                     <button onClick={addGlobalSponsor} className="bg-cyan-600 px-4 py-2 rounded font-bold hover:bg-cyan-500">AÑADIR</button>
@@ -770,10 +763,9 @@
                                                     <td className="p-3 font-mono font-bold text-pink-400">{t.pin}</td>
                                                     <td className="p-3 text-white font-bold">{t.clientName}</td>
                                                     <td className="p-3">{new Date(t.createdAt).toLocaleDateString()}</td>
-                                                    <td className="p-3">{new Date(t.expiresAt).toLocaleDateString()} {new Date(t.expiresAt).toLocaleTimeString()}</td>
+                                                    <td className="p-3">{new Date(t.expiresAt).toLocaleDateString()}</td>
                                                     <td className="p-3 text-center">{isExpired ? <span className="bg-red-500/20 text-red-500 px-2 py-1 rounded text-xs">VENCIDO</span> : <span className="bg-green-500/20 text-green-500 px-2 py-1 rounded text-xs">ACTIVO</span>}</td>
                                                     <td className="p-3 text-right">
-                                                        {/* NUEVO BOTÓN: Espiar/Controlar torneo */}
                                                         <button onClick={() => window.open(`?pin=${t.pin}`, '_blank')} className="text-blue-400 hover:text-blue-300 mr-4" title="Entrar a controlar/ver torneo"><i className="fa-solid fa-eye"></i></button>
                                                         <button onClick={() => handleDelete(t.pin)} className="text-red-500 hover:text-white" title="Eliminar torneo"><i className="fa-solid fa-trash"></i></button>
                                                     </td>
