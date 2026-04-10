@@ -3,81 +3,97 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NovaBit - Padel Scoreboard</title>
+    <title>NovaBit - Padel Scoreboard Pro</title>
     
-    <!-- Favicon -->
     <link rel="icon" href="https://i.imgur.com/FnYqHyv.png">
-
-    <!-- Tailwind CSS (CDN para usar las clases directamente) -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- FontAwesome para los íconos (Sustituto de Lucide para HTML puro) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    <!-- React y ReactDOM (Versiones de producción) -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Mapas de importación para usar ES Modules nativos en el navegador -->
+    <script type="importmap">
+        {
+            "imports": {
+                "react": "https://esm.sh/react@18.2.0",
+                "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+                "firebase/app": "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js",
+                "firebase/auth": "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js",
+                "firebase/firestore": "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"
+            }
+        }
+    </script>
     
-    <!-- Babel (Traductor de JSX a JavaScript entendible por el navegador) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
-        /* Estilos personalizados para la barra de scroll */
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
         
-        /* Animación para el banner de sponsors */
-        @keyframes slideInRight { 
-            from { transform: translateX(50px); opacity: 0; } 
-            to { transform: translateX(0); opacity: 1; } 
-        }
-
-        /* Animación hiper premium para TOURNAMENT POINT */
+        @keyframes slideInRight { from { transform: translateX(50px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         @keyframes tournamentPointPulse {
             0% { transform: scale(1); filter: drop-shadow(0 0 15px rgba(251,191,36,0.6)); }
             50% { transform: scale(1.05); filter: drop-shadow(0 0 40px rgba(251,191,36,1)); }
             100% { transform: scale(1); filter: drop-shadow(0 0 15px rgba(251,191,36,0.6)); }
         }
-        .animate-tournament-point {
-            animation: tournamentPointPulse 2s ease-in-out infinite;
-        }
-        
+        .animate-tournament-point { animation: tournamentPointPulse 2s ease-in-out infinite; }
         body { margin: 0; overflow: hidden; background-color: #0a0a0c; }
     </style>
 </head>
 <body>
-    <!-- Contenedor donde React inyectará la aplicación -->
     <div id="root"></div>
 
-    <!-- Script de la aplicación -->
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { initializeApp } from 'firebase/app';
+        import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+        import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 
-        const POINTS = ['0', '15', '30', '40', 'Ad'];
-        const SECRET_PIN = '181293'; 
-
-        const THEMES = {
-            pink: { 
-                name: 'MASTER (Rosa)', 
-                bg1: 'bg-pink-600', bg2: 'bg-indigo-600', 
-                text: 'text-pink-500', gradient: 'from-pink-500 to-indigo-500', border: 'border-pink-500', shadow: 'shadow-pink-500/20' 
-            },
-            blue: { 
-                name: 'OPEN (Azul)', 
-                bg1: 'bg-cyan-500', bg2: 'bg-blue-700', 
-                text: 'text-cyan-400', gradient: 'from-cyan-400 to-blue-600', border: 'border-cyan-400', shadow: 'shadow-cyan-500/20' 
-            },
-            gold: { 
-                name: 'FINALS (Dorado)', 
-                bg1: 'bg-yellow-500', bg2: 'bg-orange-700', 
-                text: 'text-yellow-400', gradient: 'from-yellow-400 to-orange-500', border: 'border-yellow-400', shadow: 'shadow-yellow-500/20' 
-            }
+        // --- CONFIGURACIÓN DE FIREBASE ---
+        // (Nota: Si vas a hospedar en GitHub, debes reemplazar este bloque 'firebaseConfig' con las credenciales de tu proyecto de Firebase. 
+        // Mientras lo pruebes aquí en la plataforma, usará el predeterminado automático).
+        let firebaseConfig = {
+            apiKey: "TU_API_KEY",
+            authDomain: "TU_PROYECTO.firebaseapp.com",
+            projectId: "TU_PROYECTO",
+            storageBucket: "TU_PROYECTO.appspot.com",
+            messagingSenderId: "TUS_SENDER_ID",
+            appId: "TU_APP_ID"
         };
+        
+        try {
+            if (typeof __firebase_config !== 'undefined') {
+                firebaseConfig = JSON.parse(__firebase_config);
+            }
+        } catch(e) { console.warn("Usando config de Firebase por defecto."); }
 
-        const TOURNAMENT_PHASES = [
-            "Fase de Grupos", "Dieciseisavos", "Octavos", "Cuartos", "Semifinales", "Final"
-        ];
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'novabit-padel';
+
+        // --- CONSTANTES GLOBALES ---
+        const MASTER_PIN = 'NOVA2026'; // CONTRASEÑA PARA ENTRAR AL CMS DE LA AGENCIA
+        const POINTS = ['0', '15', '30', '40', 'Ad'];
+        const THEMES = {
+            pink: { name: 'MASTER (Rosa)', bg1: 'bg-pink-600', bg2: 'bg-indigo-600', text: 'text-pink-500', gradient: 'from-pink-500 to-indigo-500', border: 'border-pink-500', shadow: 'shadow-pink-500/20' },
+            blue: { name: 'OPEN (Azul)', bg1: 'bg-cyan-500', bg2: 'bg-blue-700', text: 'text-cyan-400', gradient: 'from-cyan-400 to-blue-600', border: 'border-cyan-400', shadow: 'shadow-cyan-500/20' },
+            gold: { name: 'FINALS (Dorado)', bg1: 'bg-yellow-500', bg2: 'bg-orange-700', text: 'text-yellow-400', gradient: 'from-yellow-400 to-orange-500', border: 'border-yellow-400', shadow: 'shadow-yellow-500/20' }
+        };
+        const TOURNAMENT_PHASES = ["Fase de Grupos", "Dieciseisavos", "Octavos", "Cuartos", "Semifinales", "Final"];
+        
+        const DEFAULT_GAME_STATE = {
+            activeView: 'scoreboard',
+            category: 'MASCULINO',
+            theme: 'pink',
+            tournamentLogo: '', 
+            tournamentPhase: 'Final', 
+            team1: { p1: 'JUGADOR 1', p2: 'JUGADOR 2', sets: [0, 0, 0], points: '0', tbPoints: 0 },
+            team2: { p1: 'JUGADOR 3', p2: 'JUGADOR 4', sets: [0, 0, 0], points: '0', tbPoints: 0 },
+            server: 1, currentSet: 0, isTieBreak: false, tvAlert: '',
+            timeLeft: 300, isTimerRunning: false, matchClock: 0, isMatchClockRunning: false,
+            sponsors: ["TORNEO PATROCINADO POR: RED BULL", "VISITA NUESTRO BAR PARA BEBIDAS FRÍAS"]
+        };
 
         const BackgroundFX = ({ activeView, themeKey }) => {
             const theme = THEMES[themeKey] || THEMES.pink;
@@ -91,170 +107,181 @@
             );
         };
 
-        function PadelScoreboard() {
-            const bc = useRef(null);
-            
-            // --- SISTEMA DE SEGURIDAD ---
-            const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem('padel_auth_token') === 'true');
+        function App() {
+            // Estado de Autenticación
+            const [user, setUser] = useState(null);
+            const [authMode, setAuthMode] = useState('login'); // 'login', 'admin_cms', 'scoreboard'
             const [pinInput, setPinInput] = useState('');
-            const [authError, setAuthError] = useState(false);
+            const [authError, setAuthError] = useState('');
             
-            const [isPublicMode, setIsPublicMode] = useState(false);
+            // Estado de Scoreboard y CMS
+            const [activePin, setActivePin] = useState(null);
+            const [gameState, setGameState] = useState(DEFAULT_GAME_STATE);
+            const [globalSponsors, setGlobalSponsors] = useState([]);
+            const [tournamentsList, setTournamentsList] = useState([]);
+            
+            // UI Local
             const [showControls, setShowControls] = useState(false);
-            
-            // Índices visuales locales (no se sincronizan por socket para no saturar)
+            const [isPublicMode, setIsPublicMode] = useState(false);
             const [currentSponsorIdx, setCurrentSponsorIdx] = useState(0);
             const [currentLogoIdx, setCurrentLogoIdx] = useState(0);
 
-            // --- ESTADO GLOBAL (Sincronizado) ---
-            const [gameState, setGameState] = useState({
-                activeView: 'scoreboard',
-                category: 'MASCULINO',
-                theme: 'pink',
-                tournamentLogo: '', 
-                tournamentPhase: 'Final', 
-                team1: { p1: 'A. TAPIA', p2: 'A. COELLO', sets: [0, 0, 0], points: '0', tbPoints: 0 },
-                team2: { p1: 'F. CHINGOTTO', p2: 'A. GALÁN', sets: [0, 0, 0], points: '0', tbPoints: 0 },
-                server: 1,
-                currentSet: 0,
-                isTieBreak: false,
-                tvAlert: '',
-                timeLeft: 300, // 5 min
-                isTimerRunning: false,
-                matchClock: 0,
-                isMatchClockRunning: false,
-                sponsors: [
-                    "TORNEO PATROCINADO POR: RED BULL",
-                    "PALA OFICIAL: NOX PADEL",
-                    "VISITA NUESTRO BAR PARA BEBIDAS FRÍAS"
-                ],
-                sponsorLogos: [] // URLs de imágenes para pantalla completa
-            });
-
-            // CONFIGURACIÓN DEL FAVICON Y TÍTULO DE LA PÁGINA
+            // Bloqueo de teclado
             useEffect(() => {
-                document.title = "NovaBit - Padel Scoreboard";
-                let link = document.querySelector("link[rel~='icon']");
-                if (!link) {
-                    link = document.createElement('link');
-                    link.rel = 'icon';
-                    document.head.appendChild(link);
-                }
-                link.href = 'https://i.imgur.com/FnYqHyv.png';
+                const block = (e) => {
+                    if(e.key === 'F12' || (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J')) || (e.ctrlKey && e.key === 'U')) e.preventDefault();
+                };
+                window.addEventListener('contextmenu', e => e.preventDefault());
+                window.addEventListener('keydown', block);
+                return () => { window.removeEventListener('contextmenu', e => e.preventDefault()); window.removeEventListener('keydown', block); };
             }, []);
 
-            // PROTECCIÓN ANTI-INSPECCIÓN
+            // INICIALIZACIÓN DE FIREBASE (Regla 3: Auth First)
             useEffect(() => {
-                const handleContextMenu = (e) => e.preventDefault();
-                const handleKeyDown = (e) => {
-                    if (
-                        e.key === 'F12' || 
-                        (e.ctrlKey && e.shiftKey && e.key === 'I') || 
-                        (e.ctrlKey && e.shiftKey && e.key === 'J') || 
-                        (e.ctrlKey && e.key === 'U')
-                    ) {
-                        e.preventDefault();
+                const initAuth = async () => {
+                    try {
+                        await signInAnonymously(auth);
+                    } catch (e) { console.error("Error Auth:", e); }
+                };
+                initAuth();
+
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
+                    setUser(u);
+                    // Chequear si entra por URL de pantalla pública
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const urlPin = urlParams.get('pin');
+                    if (urlParams.get('display') === 'true') setIsPublicMode(true);
+                    
+                    if (urlPin && u) {
+                        validateAndLoadTournament(urlPin);
                     }
-                };
-
-                window.addEventListener('contextmenu', handleContextMenu);
-                window.addEventListener('keydown', handleKeyDown);
-
-                return () => {
-                    window.removeEventListener('contextmenu', handleContextMenu);
-                    window.removeEventListener('keydown', handleKeyDown);
-                };
-            }, []);
-
-            // Inicialización y Broadcast Channel
-            useEffect(() => {
-                if (window.location.search.includes('mode=display')) setIsPublicMode(true);
-
-                bc.current = new BroadcastChannel('padel_sync_channel');
-                bc.current.onmessage = (event) => {
-                    if (event.data.type === 'SYNC_STATE') setGameState(event.data.payload);
-                };
-                return () => bc.current.close();
-            }, []);
-
-            const handleLogin = (e) => {
-                e.preventDefault();
-                if (pinInput === SECRET_PIN) {
-                    localStorage.setItem('padel_auth_token', 'true');
-                    setIsAuthenticated(true);
-                    setAuthError(false);
-                } else {
-                    setAuthError(true);
-                    setPinInput('');
-                }
-            };
-
-            const updateGame = (updates) => {
-                setGameState(prev => {
-                    const newState = { ...prev, ...updates };
-                    if (bc.current) bc.current.postMessage({ type: 'SYNC_STATE', payload: newState });
-                    return newState;
                 });
+                return () => unsubscribe();
+            }, []);
+
+            // Suscripción Global Sponsors
+            useEffect(() => {
+                if (!user) return;
+                const unsub = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'globalSponsors', 'main'), (docSnap) => {
+                    if (docSnap.exists()) {
+                        setGlobalSponsors(docSnap.data().logos || []);
+                    }
+                });
+                return () => unsub();
+            }, [user]);
+
+            // Función de Validación de PIN
+            const validateAndLoadTournament = async (pinStr) => {
+                if (!user) return;
+                
+                if (pinStr === MASTER_PIN) {
+                    setAuthMode('admin_cms');
+                    return;
+                }
+
+                try {
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'tournaments', pinStr);
+                    const docSnap = await getDoc(docRef);
+
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        if (Date.now() > data.expiresAt) {
+                            setAuthError("Este código ha caducado.");
+                        } else {
+                            setActivePin(pinStr);
+                            setAuthMode('scoreboard');
+                        }
+                    } else {
+                        setAuthError("PIN Invalido o no existe.");
+                    }
+                } catch (error) {
+                    setAuthError("Error de conexión.");
+                }
             };
 
-            // Temporizadores de partido y pantallas
+            const handleLoginSubmit = (e) => {
+                e.preventDefault();
+                setAuthError('');
+                validateAndLoadTournament(pinInput);
+            };
+
+            // Suscripción de Estado de Juego
             useEffect(() => {
-                let warmupInterval = null;
-                let matchInterval = null;
+                if (!user || authMode !== 'scoreboard' || !activePin) return;
+                const unsub = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', activePin), (docSnap) => {
+                    if (docSnap.exists()) {
+                        setGameState(docSnap.data().gameState);
+                    }
+                }, (err) => console.error(err));
+                return () => unsub();
+            }, [user, authMode, activePin]);
 
-                if (gameState.isTimerRunning && gameState.timeLeft > 0) {
-                    warmupInterval = setInterval(() => {
-                        setGameState(prev => ({ ...prev, timeLeft: prev.timeLeft - 1 }));
-                    }, 1000);
-                } else if (gameState.timeLeft === 0 && gameState.isTimerRunning) {
-                    updateGame({ isTimerRunning: false });
-                }
-
-                if (gameState.isMatchClockRunning) {
-                    matchInterval = setInterval(() => {
-                        setGameState(prev => ({ ...prev, matchClock: prev.matchClock + 1 }));
-                    }, 1000);
-                }
-
-                return () => {
-                    clearInterval(warmupInterval);
-                    clearInterval(matchInterval);
-                };
-            }, [gameState.isTimerRunning, gameState.isMatchClockRunning]);
-
-            // Rotación Ticker Sponsors (Texto)
+            // Temporizadores Locales (Actualizan Firestore cada segundo para sincronía fina)
             useEffect(() => {
-                if (!gameState.sponsors || gameState.sponsors.length === 0) return;
-                const interval = setInterval(() => setCurrentSponsorIdx((prev) => (prev + 1) % gameState.sponsors.length), 5000);
-                return () => clearInterval(interval);
+                let intervalId = null;
+                if (authMode === 'scoreboard' && !isPublicMode && activePin && (gameState.isTimerRunning || gameState.isMatchClockRunning)) {
+                    intervalId = setInterval(() => {
+                        let updates = {};
+                        if (gameState.isTimerRunning && gameState.timeLeft > 0) {
+                            updates.timeLeft = gameState.timeLeft - 1;
+                        } else if (gameState.isTimerRunning && gameState.timeLeft <= 0) {
+                            updates.isTimerRunning = false;
+                        }
+
+                        if (gameState.isMatchClockRunning) {
+                            updates.matchClock = gameState.matchClock + 1;
+                        }
+                        
+                        if (Object.keys(updates).length > 0) {
+                            pushUpdate(updates);
+                        }
+                    }, 1000);
+                }
+                return () => clearInterval(intervalId);
+            }, [gameState.isTimerRunning, gameState.isMatchClockRunning, gameState.timeLeft, gameState.matchClock, authMode, isPublicMode, activePin]);
+
+            // Rotaciones Visuales Locales
+            useEffect(() => {
+                if (gameState.sponsors?.length > 0) {
+                    const i = setInterval(() => setCurrentSponsorIdx(p => (p + 1) % gameState.sponsors.length), 5000);
+                    return () => clearInterval(i);
+                }
             }, [gameState.sponsors?.length]);
 
-            // Rotación Logos Sponsor (Pantalla Completa)
             useEffect(() => {
-                if (gameState.activeView === 'sponsor_full' && gameState.sponsorLogos && gameState.sponsorLogos.length > 0) {
-                    const interval = setInterval(() => {
-                        setCurrentLogoIdx(prev => (prev + 1) % gameState.sponsorLogos.length);
-                    }, 4000); // Cambia cada 4 segundos
-                    return () => clearInterval(interval);
+                if (gameState.activeView === 'sponsor_full' && globalSponsors.length > 0) {
+                    const i = setInterval(() => setCurrentLogoIdx(p => (p + 1) % globalSponsors.length), 4000);
+                    return () => clearInterval(i);
                 }
-            }, [gameState.activeView, gameState.sponsorLogos]);
+            }, [gameState.activeView, globalSponsors.length]);
 
-            // --- HANDLERS MARCADOR ---
+            // Función Maestra de Update hacia la Base de Datos
+            const pushUpdate = async (updates) => {
+                if (!activePin || isPublicMode) return;
+                const newState = { ...gameState, ...updates };
+                // Actualizamos estado local rápido
+                setGameState(newState);
+                // Subimos a Firebase (Debounce implícito por Firestore)
+                try {
+                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', activePin), { gameState: newState });
+                } catch (e) { console.error("Update fail:", e); }
+            };
+
+            // Helpers de Puntuación
             const handlePoints = (teamNum, direction) => {
                 const teamKey = teamNum === 1 ? 'team1' : 'team2';
                 const team = gameState[teamKey];
-
                 if (gameState.isTieBreak) {
                     let newTb = team.tbPoints;
                     if (direction === 'up') newTb++;
                     if (direction === 'down' && newTb > 0) newTb--;
-                    updateGame({ [teamKey]: { ...team, tbPoints: newTb } });
+                    pushUpdate({ [teamKey]: { ...team, tbPoints: newTb } });
                 } else {
-                    const currentIndex = POINTS.indexOf(team.points);
-                    let newIndex = currentIndex;
-                    if (direction === 'up' && currentIndex < POINTS.length - 1) newIndex++;
-                    if (direction === 'down' && currentIndex > 0) newIndex--;
-                    updateGame({ [teamKey]: { ...team, points: POINTS[newIndex] } });
+                    const curr = POINTS.indexOf(team.points);
+                    let nIdx = curr;
+                    if (direction === 'up' && curr < POINTS.length - 1) nIdx++;
+                    if (direction === 'down' && curr > 0) nIdx--;
+                    pushUpdate({ [teamKey]: { ...team, points: POINTS[nIdx] } });
                 }
             };
 
@@ -264,7 +291,7 @@
                 let newSets = [...team.sets];
                 if (direction === 'up' && newSets[gameState.currentSet] < 7) newSets[gameState.currentSet]++;
                 if (direction === 'down' && newSets[gameState.currentSet] > 0) newSets[gameState.currentSet]--;
-                updateGame({ [teamKey]: { ...team, sets: newSets } });
+                pushUpdate({ [teamKey]: { ...team, sets: newSets } });
             };
 
             const formatTime = (seconds, includeHours = false) => {
@@ -275,339 +302,213 @@
                 return `${m}:${s}`;
             };
 
-            const openPublicScreen = () => {
-                const url = window.location.href.split('?')[0] + '?mode=display';
-                window.open(url, 'PantallaPadel', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no');
-            };
+            // --- VISTAS DEL SISTEMA ---
 
-            // Configuración visual de las Alertas TV
-            const getAlertConfig = (alertType) => {
-                switch(alertType) {
-                    case 'PUNTO DE ORO':
-                        return { bg: 'from-transparent via-yellow-600/80 to-transparent', border: 'border-yellow-400', text: 'text-yellow-400 animate-pulse drop-shadow-[0_0_10px_rgba(250,204,21,0.8)]' };
-                    case 'SET POINT':
-                        return { bg: 'from-transparent via-orange-600/80 to-transparent', border: 'border-orange-500', text: 'text-orange-400 animate-pulse drop-shadow-[0_0_10px_rgba(249,115,22,0.8)]' };
-                    case 'MATCH POINT':
-                        return { bg: 'from-transparent via-red-600/80 to-transparent', border: 'border-red-500', text: 'text-red-400 animate-pulse drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]' };
-                    case 'TOURNAMENT POINT':
-                        return { bg: 'from-transparent via-amber-600/90 to-transparent', border: 'border-amber-300 shadow-[0_0_30px_rgba(251,191,36,0.6)]', text: 'bg-clip-text text-transparent bg-gradient-to-r from-yellow-200 via-amber-400 to-yellow-200 animate-tournament-point text-3xl' };
-                    default:
-                        return { bg: 'from-transparent via-gray-600/80 to-transparent', border: 'border-gray-500', text: 'text-white' };
-                }
-            };
-
-            const activeTheme = THEMES[gameState.theme];
-
-            // --- PANTALLA DE BLOQUEO ---
-            if (!isAuthenticated) {
+            if (authMode === 'login') {
                 return (
-                    <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center font-sans relative overflow-hidden text-white" onContextMenu={(e) => e.preventDefault()}>
+                    <div className="min-h-screen flex items-center justify-center relative">
                         <BackgroundFX activeView="scoreboard" themeKey="pink" />
-                        <div className="z-10 bg-black/60 backdrop-blur-2xl p-10 rounded-2xl border border-white/10 shadow-[0_0_50px_rgba(219,39,119,0.3)] w-full max-w-md text-center">
+                        <div className="z-10 bg-black/60 backdrop-blur-2xl p-10 rounded-2xl border border-white/10 shadow-[0_0_50px_rgba(219,39,119,0.3)] w-full max-w-md text-center text-white">
                             <div className="mx-auto w-20 h-20 bg-pink-600/20 rounded-full flex items-center justify-center mb-6 border border-pink-500/50">
-                                <i className="fa-solid fa-lock text-pink-500 text-[40px]"></i>
+                                <i className="fa-solid fa-shield-halved text-pink-500 text-[36px]"></i>
                             </div>
-                            <h1 className="text-2xl font-black text-white tracking-widest uppercase mb-2">Acceso Restringido</h1>
-                            <p className="text-gray-400 text-sm tracking-wider mb-8">SISTEMA OFICIAL DE MARCADOR</p>
+                            <h1 className="text-2xl font-black tracking-widest uppercase mb-2">Acceso al Sistema</h1>
+                            <p className="text-gray-400 text-sm tracking-wider mb-8">INTRODUZCA SU PIN DE TORNEO</p>
                             
-                            <form onSubmit={handleLogin} className="space-y-6">
+                            <form onSubmit={handleLoginSubmit} className="space-y-6">
                                 <div>
                                     <div className="relative">
                                         <i className="fa-solid fa-key absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-500 text-[20px]"></i>
-                                        <input 
-                                            type="password" 
-                                            value={pinInput}
-                                            onChange={(e) => setPinInput(e.target.value)}
-                                            placeholder="INGRESE SU PIN" 
-                                            className="w-full bg-black/50 border border-white/20 text-white font-bold text-center text-xl py-4 rounded-xl focus:outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500 transition-all uppercase tracking-[0.5em]"
-                                            autoFocus
-                                        />
+                                        <input type="password" value={pinInput} onChange={e => setPinInput(e.target.value)} placeholder="000000" className="w-full bg-black/50 border border-white/20 text-white font-bold text-center text-2xl py-4 rounded-xl focus:outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500 transition-all tracking-[0.5em]" autoFocus/>
                                     </div>
-                                    {authError && <p className="text-red-500 text-xs font-bold mt-3 animate-pulse uppercase tracking-widest">PIN INCORRECTO</p>}
+                                    {authError && <p className="text-red-500 text-xs font-bold mt-3 animate-pulse tracking-widest uppercase">{authError}</p>}
                                 </div>
-                                <button type="submit" className="w-full bg-gradient-to-r from-pink-600 to-indigo-600 text-white font-black py-4 rounded-xl uppercase tracking-widest hover:opacity-90 transition-opacity shadow-[0_0_20px_rgba(219,39,119,0.4)]">
-                                    DESBLOQUEAR SISTEMA
-                                </button>
+                                <button type="submit" className="w-full bg-gradient-to-r from-pink-600 to-indigo-600 text-white font-black py-4 rounded-xl uppercase tracking-widest hover:opacity-90 transition-opacity shadow-lg">CONECTAR</button>
                             </form>
                         </div>
-                        
-                        <div className="absolute bottom-8 flex flex-col items-center opacity-50 hover:opacity-100 transition-opacity">
-                            <img src="https://i.imgur.com/FnYqHyv.png" alt="NovaBit Media Agency" className="h-10 mb-2 object-contain" />
-                            <span className="text-[9px] text-gray-400 font-bold tracking-[0.2em] uppercase">Powered by NovaBit Media Agency</span>
-                            <span className="text-[7px] text-gray-500 tracking-[0.2em] uppercase mt-1">Todos los derechos reservados</span>
+                        <div className="absolute bottom-8 flex flex-col items-center opacity-50 text-white">
+                            <img src="https://i.imgur.com/FnYqHyv.png" alt="NovaBit" className="h-10 mb-2 object-contain" />
+                            <span className="text-[9px] font-bold tracking-[0.2em] uppercase">Powered by NovaBit Media Agency</span>
+                            <span className="text-[7px] text-gray-400 tracking-[0.2em] uppercase mt-1">Todos los derechos reservados</span>
                         </div>
                     </div>
                 );
             }
 
-            // --- RENDER CONTROL PANEL ---
-            const renderControlPanel = () => (
-                <div className={`fixed right-0 top-0 h-full w-[450px] bg-gray-900/95 backdrop-blur-xl border-l border-white/10 z-50 transform transition-transform duration-500 ease-in-out ${showControls ? 'translate-x-0' : 'translate-x-full'} shadow-2xl flex flex-col text-white`} onContextMenu={(e) => e.stopPropagation()}>
-                    <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/80">
-                        <h2 className={`text-xl font-black tracking-widest ${activeTheme.text} flex items-center gap-2`}>
-                            <i className="fa-solid fa-gear text-[20px]"></i> PANEL TV
-                        </h2>
-                        <button onClick={() => setShowControls(false)} className="text-gray-400 hover:text-white transition-colors">
-                            <i className="fa-solid fa-xmark text-[24px]"></i>
-                        </button>
-                    </div>
+            // --- VISTA CMS (PANEL DE AGENCIA) ---
+            if (authMode === 'admin_cms') {
+                return <AdminCMS db={db} user={user} appId={appId} setAuthMode={setAuthMode} globalSponsors={globalSponsors} />;
+            }
 
-                    <div className="flex-1 overflow-y-auto p-5 space-y-6 text-sm custom-scrollbar">
-                        
-                        {/* Ajustes Generales */}
-                        <div className="bg-gradient-to-br from-white/5 to-transparent border border-white/10 rounded-lg p-4 space-y-4">
-                            <button onClick={openPublicScreen} className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold flex items-center justify-center gap-2 transition-colors shadow-lg shadow-indigo-500/20 text-xs">
-                                <i className="fa-solid fa-arrow-up-right-from-square text-[14px]"></i> ABRIR PANTALLA 2 (TV)
-                            </button>
-                            
-                            <div className="grid grid-cols-3 gap-2">
-                                <div className="space-y-1">
-                                    <label className="text-gray-400 font-bold text-[9px] uppercase flex items-center gap-1">
-                                        <i className="fa-solid fa-venus-mars text-[10px]"></i> CATEGORÍA
-                                    </label>
-                                    <select 
-                                        value={gameState.category} 
-                                        onChange={e => updateGame({category: e.target.value})}
-                                        className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full focus:outline-none focus:border-white"
-                                    >
-                                        <option value="MASCULINO">MASCULINO</option>
-                                        <option value="FEMENINO">FEMENINO</option>
-                                        <option value="MIXTO">MIXTO</option>
-                                    </select>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-gray-400 font-bold text-[9px] uppercase flex items-center gap-1">
-                                        <i className="fa-solid fa-palette text-[10px]"></i> TEMA
-                                    </label>
-                                    <select 
-                                        value={gameState.theme} 
-                                        onChange={e => updateGame({theme: e.target.value})}
-                                        className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full focus:outline-none focus:border-white"
-                                    >
-                                        {Object.entries(THEMES).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}
-                                    </select>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-gray-400 font-bold text-[9px] uppercase flex items-center gap-1">
-                                        <i className="fa-solid fa-sitemap text-[10px]"></i> FASE
-                                    </label>
-                                    <select 
-                                        value={gameState.tournamentPhase} 
-                                        onChange={e => updateGame({tournamentPhase: e.target.value})}
-                                        className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full focus:outline-none focus:border-white"
-                                    >
-                                        {TOURNAMENT_PHASES.map(fase => <option key={fase} value={fase}>{fase}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                            
-                            <div className="space-y-1 border-t border-white/10 pt-3">
-                                <label className="text-gray-400 font-bold text-[10px] uppercase flex items-center gap-1">
-                                    <i className="fa-regular fa-image text-[12px]"></i> LOGO DEL TORNEO (OPCIONAL)
-                                </label>
-                                <input 
-                                    type="text" 
-                                    value={gameState.tournamentLogo} 
-                                    onChange={e => updateGame({tournamentLogo: e.target.value})} 
-                                    placeholder="URL de la imagen (ej. https://...)" 
-                                    className="w-full bg-black/50 border border-white/20 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:border-white"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Control de Vistas */}
-                        <div className="space-y-2">
-                            <label className="text-gray-400 font-bold tracking-wider text-xs uppercase">PANTALLA ACTIVA</label>
-                            <div className="grid grid-cols-4 gap-2">
-                                {[
-                                    { id: 'scoreboard', icon: 'fa-desktop', label: 'MARCADOR' },
-                                    { id: 'warmup', icon: 'fa-fire', label: 'CALENTAR' },
-                                    { id: 'halftime', icon: 'fa-mug-hot', label: 'DESCANSO' },
-                                    { id: 'sponsor_full', icon: 'fa-bolt', label: 'SPONSOR' }
-                                ].map(view => (
-                                    <button 
-                                        key={view.id}
-                                        onClick={() => updateGame({activeView: view.id})} 
-                                        className={`py-2 rounded border font-bold flex flex-col items-center gap-1 justify-center transition-all text-[10px] ${gameState.activeView === view.id ? `bg-white text-black border-white` : 'border-white/10 text-gray-400 hover:bg-white/5'}`}
-                                    >
-                                        <i className={`fa-solid ${view.icon} text-[14px]`}></i> {view.label}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* ALERTS Y RELOJES */}
-                        <div className="bg-black/40 p-3 rounded-lg border border-white/5 space-y-3">
-                            <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                                 <label className="text-gray-400 font-bold tracking-wider text-xs uppercase flex items-center gap-2">
-                                    <i className="fa-solid fa-triangle-exclamation text-[14px]"></i> ALERTAS TV
-                                 </label>
-                                 <button onClick={() => updateGame({tvAlert: ''})} className="text-[10px] bg-red-500/20 text-red-400 px-2 py-1 rounded hover:bg-red-500/40">LIMPIAR</button>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                                {['PUNTO DE ORO', 'SET POINT', 'MATCH POINT', 'TOURNAMENT POINT'].map(alert => (
-                                    <button 
-                                        key={alert} 
-                                        onClick={() => updateGame({tvAlert: alert})} 
-                                        className={`py-2 text-[10px] font-bold rounded border ${
-                                            gameState.tvAlert === alert 
-                                            ? alert === 'TOURNAMENT POINT' ? 'bg-amber-600 text-white border-amber-400' : 'bg-white text-black border-white' 
-                                            : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700'
-                                        }`}
-                                    >
-                                        {alert}
-                                    </button>
-                                ))}
-                            </div>
-                            
-                            {/* RELOJ PARTIDO */}
-                            <div className="flex items-center justify-between pt-2 border-t border-white/10">
-                                 <label className="text-gray-400 font-bold tracking-wider text-xs uppercase flex items-center gap-2">
-                                    <i className="fa-solid fa-stopwatch text-[14px]"></i> TIEMPO PARTIDO
-                                 </label>
-                                 <div className="flex items-center gap-2">
-                                     <span className="font-mono font-bold text-white">{formatTime(gameState.matchClock, true)}</span>
-                                     <button onClick={() => updateGame({isMatchClockRunning: !gameState.isMatchClockRunning})} className={`px-2 py-1 rounded text-xs font-bold ${gameState.isMatchClockRunning ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>
-                                         {gameState.isMatchClockRunning ? 'PAUSAR' : 'INICIAR'}
-                                     </button>
-                                 </div>
-                            </div>
-
-                            {/* RELOJ PANTALLAS (CALENTAMIENTO/DESCANSO) */}
-                            <div className="pt-2 border-t border-white/10 space-y-2">
-                                <label className="text-gray-400 font-bold tracking-wider text-xs uppercase flex items-center justify-between gap-2">
-                                    <span><i className="fa-solid fa-hourglass-half text-[14px] mr-1"></i> RELOJ PANTALLAS (CAL./DESC.)</span>
-                                </label>
-                                <div className="grid grid-cols-4 gap-1">
-                                    <button onClick={() => updateGame({timeLeft: Math.max(0, gameState.timeLeft - 60)})} className="py-1 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold transition-colors">-1 MIN</button>
-                                    <button onClick={() => updateGame({timeLeft: gameState.timeLeft + 60})} className="py-1 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold transition-colors">+1 MIN</button>
-                                    <button onClick={() => updateGame({timeLeft: 300, isTimerRunning: false})} className="py-1 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold transition-colors border border-white/10">5 MIN</button>
-                                    <button onClick={() => updateGame({timeLeft: 600, isTimerRunning: false})} className="py-1 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold transition-colors border border-white/10">10 MIN</button>
-                                </div>
-                                <div className="flex items-center justify-between bg-black/50 p-2 rounded">
-                                    <span className="font-mono font-bold text-xl text-white ml-2">{formatTime(gameState.timeLeft)}</span>
-                                    <button onClick={() => updateGame({isTimerRunning: !gameState.isTimerRunning})} className={`px-4 py-1.5 rounded text-xs font-bold ${gameState.isTimerRunning ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>
-                                        {gameState.isTimerRunning ? 'PAUSAR' : 'INICIAR'}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* MARCADOR CONTROLES */}
-                        <div className={`space-y-4 transition-opacity ${gameState.activeView !== 'scoreboard' ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
-                            <div className="flex justify-between items-center border-b border-white/10 pb-2">
-                                <label className="text-gray-400 font-bold tracking-wider text-xs uppercase">PUNTOS Y SETS</label>
-                                <button onClick={() => updateGame({isTieBreak: !gameState.isTieBreak})} className={`text-xs px-3 py-1 rounded font-bold border transition-all ${gameState.isTieBreak ? 'bg-red-600 border-red-500 text-white animate-pulse' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>
-                                    MODO TIE-BREAK
-                                </button>
-                            </div>
-                            
-                            {[1, 2].map((num) => {
-                                const teamKey = num === 1 ? 'team1' : 'team2';
-                                const team = gameState[teamKey];
-                                return (
-                                    <div key={`ctrl-t${num}`} className="bg-black/40 p-3 rounded-lg border border-white/5 space-y-3 relative overflow-hidden">
-                                        {gameState.server === num && <div className="absolute top-0 left-0 w-1 h-full bg-yellow-400"></div>}
-                                        <div className="flex items-start gap-2 pl-2">
-                                            <div className="flex-1 space-y-1">
-                                                <input type="text" value={team.p1} onChange={(e) => updateGame({ [teamKey]: { ...team, p1: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full focus:outline-none focus:border-white px-2 py-1 text-xs uppercase rounded" placeholder="Jugador 1"/>
-                                                <input type="text" value={team.p2} onChange={(e) => updateGame({ [teamKey]: { ...team, p2: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full focus:outline-none focus:border-white px-2 py-1 text-xs uppercase rounded" placeholder="Jugador 2"/>
-                                            </div>
-                                            <button onClick={() => updateGame({server: num})} className={`text-[10px] px-2 py-2 rounded font-bold shrink-0 h-full ${gameState.server === num ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-400'}`}>
-                                                SAQUE
-                                            </button>
-                                        </div>
-                                        
-                                        <div className="grid grid-cols-2 gap-3 pl-2">
-                                            <div className="bg-white/5 p-2 rounded">
-                                                <span className={`text-xs block mb-1 font-bold ${gameState.isTieBreak ? 'text-red-400' : 'text-gray-400'}`}>Puntos ({gameState.isTieBreak ? team.tbPoints : team.points})</span>
-                                                <div className="flex gap-1">
-                                                    <button onClick={() => handlePoints(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 text-white py-1.5 rounded flex justify-center"><i className="fa-solid fa-minus text-[14px]"></i></button>
-                                                    <button onClick={() => handlePoints(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 text-white py-1.5 rounded flex justify-center"><i className="fa-solid fa-plus text-[14px]"></i></button>
-                                                </div>
-                                            </div>
-                                            <div className="bg-white/5 p-2 rounded">
-                                                <span className="text-gray-400 text-xs block mb-1 font-bold">Set {gameState.currentSet + 1} ({team.sets[gameState.currentSet]})</span>
-                                                <div className="flex gap-1">
-                                                    <button onClick={() => updateGames(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 text-white py-1.5 rounded flex justify-center"><i className="fa-solid fa-minus text-[14px]"></i></button>
-                                                    <button onClick={() => updateGames(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 text-white py-1.5 rounded flex justify-center"><i className="fa-solid fa-plus text-[14px]"></i></button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )
-                            })}
-                            
-                            <div className="flex gap-1">
-                                {[0, 1, 2].map(s => (
-                                    <button key={s} onClick={() => updateGame({currentSet: s})} className={`flex-1 py-1.5 text-xs font-bold rounded ${gameState.currentSet === s ? 'bg-white text-black' : 'bg-gray-800 text-gray-400'}`}>SET {s + 1}</button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* SPONSORS FULL SCREEN MANAGER */}
-                        <div className="bg-gradient-to-br from-white/5 to-transparent border border-white/10 rounded-lg p-4 space-y-3">
-                            <label className="text-gray-400 font-bold text-[10px] uppercase flex items-center gap-1 border-b border-white/10 pb-2">
-                                <i className="fa-solid fa-images text-[12px]"></i> LOGOS SPONSORS (PANTALLA COMPLETA)
-                            </label>
-                            <div className="flex gap-2">
-                                <input id="newSponsorLogo" type="text" placeholder="URL del logo (.png, .jpg)" className="flex-1 bg-black/50 border border-white/20 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:border-white" />
-                                <button onClick={() => {
-                                    const input = document.getElementById('newSponsorLogo');
-                                    if(input.value) {
-                                        updateGame({ sponsorLogos: [...(gameState.sponsorLogos || []), input.value] });
-                                        input.value = '';
-                                    }
-                                }} className="bg-white/10 px-3 py-1.5 rounded text-xs hover:bg-white/20 transition-colors"><i className="fa-solid fa-plus"></i></button>
-                            </div>
-                            <div className="space-y-1 max-h-32 overflow-y-auto custom-scrollbar pr-1">
-                                {(gameState.sponsorLogos || []).length === 0 && <p className="text-[10px] text-gray-500 italic">No hay logos cargados.</p>}
-                                {(gameState.sponsorLogos || []).map((logo, idx) => (
-                                    <div key={idx} className="flex items-center justify-between bg-black/40 px-2 py-1.5 rounded text-[10px] border border-white/5">
-                                        <span className="truncate max-w-[160px] text-gray-300">{logo}</span>
-                                        <button onClick={() => {
-                                            const newLogos = [...gameState.sponsorLogos];
-                                            newLogos.splice(idx, 1);
-                                            updateGame({ sponsorLogos: newLogos });
-                                        }} className="text-red-400 hover:text-red-300 px-2 py-1"><i className="fa-solid fa-trash"></i></button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* BRANDING NOVABIT - PANEL DE CONTROL */}
-                        <div className="mt-8 pt-6 border-t border-white/5 flex flex-col items-center justify-center opacity-60">
-                            <img src="https://i.imgur.com/FnYqHyv.png" alt="NovaBit" className="h-8 mb-2 object-contain" />
-                            <span className="text-[8px] text-gray-400 font-bold tracking-[0.2em] uppercase text-center">Powered by NovaBit Media Agency</span>
-                            <span className="text-[6px] text-gray-500 tracking-widest uppercase mt-1">Todos los Derechos Reservados</span>
-                        </div>
-                    </div>
-                </div>
-            );
+            // --- VISTA PRINCIPAL (SCOREBOARD OPERATOR / DISPLAY) ---
+            const activeTheme = THEMES[gameState.theme] || THEMES.pink;
 
             return (
-                <div className="min-h-screen bg-[#0a0a0c] text-white font-sans overflow-hidden relative selection:bg-white/30 flex flex-col" onContextMenu={(e) => e.preventDefault()}>
+                <div className="min-h-screen text-white relative flex flex-col">
                     <BackgroundFX activeView={gameState.activeView} themeKey={gameState.theme} />
 
                     {!isPublicMode && (
-                        <button onClick={() => setShowControls(true)} className={`fixed bottom-6 right-6 z-40 ${activeTheme.bg1} backdrop-blur-md p-4 rounded-full border border-white/20 transition-all ${activeTheme.shadow} text-white hover:scale-110`}>
+                        <button onClick={() => setShowControls(true)} className={`fixed bottom-6 right-6 z-50 ${activeTheme.bg1} backdrop-blur-md p-4 rounded-full border border-white/20 shadow-xl hover:scale-110 transition-transform`}>
                             <i className="fa-solid fa-gear text-[28px]"></i>
                         </button>
                     )}
 
-                    {!isPublicMode && renderControlPanel()}
+                    {/* MENÚ DE CONTROL LATERAL */}
+                    {!isPublicMode && (
+                        <div className={`fixed right-0 top-0 h-full w-[450px] bg-gray-900/95 backdrop-blur-xl border-l border-white/10 z-50 transform transition-transform duration-500 ease-in-out ${showControls ? 'translate-x-0' : 'translate-x-full'} shadow-2xl flex flex-col`} onContextMenu={(e) => e.stopPropagation()}>
+                            <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/80">
+                                <h2 className={`text-xl font-black tracking-widest ${activeTheme.text} flex items-center gap-2`}>
+                                    <i className="fa-solid fa-gamepad text-[20px]"></i> OPERADOR
+                                </h2>
+                                <div className="flex gap-4 items-center">
+                                    <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-1 rounded border border-green-500/30">PIN: {activePin}</span>
+                                    <button onClick={() => setShowControls(false)} className="text-gray-400 hover:text-white"><i className="fa-solid fa-xmark text-[24px]"></i></button>
+                                </div>
+                            </div>
 
-                    {/* CONTENEDOR PRINCIPAL PANTALLAS */}
+                            <div className="flex-1 overflow-y-auto p-5 space-y-6 text-sm custom-scrollbar">
+                                {/* Botón Pantalla 2 */}
+                                <button onClick={() => window.open(`${window.location.pathname}?pin=${activePin}&display=true`, 'PantallaTV', 'width=1280,height=720')} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded font-bold flex items-center justify-center gap-2 transition-colors shadow-lg shadow-indigo-500/20">
+                                    <i className="fa-solid fa-tv text-[16px]"></i> LANZAR PANTALLA PÚBLICA (TV)
+                                </button>
+                                
+                                <div className="bg-white/5 border border-white/10 rounded-lg p-3 space-y-3">
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <div className="space-y-1">
+                                            <label className="text-gray-400 font-bold text-[9px] uppercase"><i className="fa-solid fa-venus-mars"></i> CATEGORÍA</label>
+                                            <select value={gameState.category} onChange={e => pushUpdate({category: e.target.value})} className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full">
+                                                <option value="MASCULINO">MASCULINO</option><option value="FEMENINO">FEMENINO</option><option value="MIXTO">MIXTO</option>
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-gray-400 font-bold text-[9px] uppercase"><i className="fa-solid fa-palette"></i> TEMA</label>
+                                            <select value={gameState.theme} onChange={e => pushUpdate({theme: e.target.value})} className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full">
+                                                {Object.entries(THEMES).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-gray-400 font-bold text-[9px] uppercase"><i className="fa-solid fa-sitemap"></i> FASE</label>
+                                            <select value={gameState.tournamentPhase} onChange={e => pushUpdate({tournamentPhase: e.target.value})} className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full">
+                                                {TOURNAMENT_PHASES.map(f => <option key={f} value={f}>{f}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1 pt-2 border-t border-white/10">
+                                        <label className="text-gray-400 font-bold text-[10px] uppercase"><i className="fa-regular fa-image"></i> LOGO TORNEO URL</label>
+                                        <input type="text" value={gameState.tournamentLogo} onChange={e => pushUpdate({tournamentLogo: e.target.value})} className="w-full bg-black/50 border border-white/20 text-white text-xs rounded px-2 py-1.5" />
+                                    </div>
+                                </div>
+
+                                {/* Cambio de Vistas */}
+                                <div className="space-y-2">
+                                    <label className="text-gray-400 font-bold tracking-wider text-xs uppercase">CONTROL DE PANTALLA</label>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {[{ id: 'scoreboard', icon: 'fa-desktop', label: 'MARCADOR' }, { id: 'warmup', icon: 'fa-fire', label: 'CALENTAR' }, { id: 'halftime', icon: 'fa-mug-hot', label: 'DESCANSO' }, { id: 'sponsor_full', icon: 'fa-bolt', label: 'SPONSOR' }].map(v => (
+                                            <button key={v.id} onClick={() => pushUpdate({activeView: v.id})} className={`py-2 rounded border font-bold flex flex-col items-center gap-1 transition-all text-[10px] ${gameState.activeView === v.id ? 'bg-white text-black border-white' : 'border-white/10 text-gray-400 hover:bg-white/5'}`}>
+                                                <i className={`fa-solid ${v.icon} text-[14px]`}></i> {v.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Alertas y Tiempos */}
+                                <div className="bg-black/40 p-3 rounded-lg border border-white/5 space-y-3">
+                                    <div className="flex justify-between items-center border-b border-white/10 pb-2">
+                                        <label className="text-gray-400 font-bold text-xs uppercase"><i className="fa-solid fa-triangle-exclamation"></i> ALERTAS TV</label>
+                                        <button onClick={() => pushUpdate({tvAlert: ''})} className="text-[10px] bg-red-500/20 text-red-400 px-2 py-1 rounded">LIMPIAR</button>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {['PUNTO DE ORO', 'SET POINT', 'MATCH POINT', 'TOURNAMENT POINT'].map(alert => (
+                                            <button key={alert} onClick={() => pushUpdate({tvAlert: alert})} className={`py-2 text-[10px] font-bold rounded border ${gameState.tvAlert === alert ? (alert === 'TOURNAMENT POINT' ? 'bg-amber-600 text-white border-amber-400' : 'bg-white text-black border-white') : 'bg-gray-800 text-gray-400 border-gray-700'}`}>{alert}</button>
+                                        ))}
+                                    </div>
+                                    
+                                    <div className="flex justify-between items-center pt-2 border-t border-white/10">
+                                        <label className="text-gray-400 font-bold text-xs uppercase"><i className="fa-solid fa-stopwatch"></i> TIEMPO PARTIDO</label>
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-mono font-bold">{formatTime(gameState.matchClock, true)}</span>
+                                            <button onClick={() => pushUpdate({isMatchClockRunning: !gameState.isMatchClockRunning})} className={`px-2 py-1 rounded text-[10px] font-bold ${gameState.isMatchClockRunning ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>{gameState.isMatchClockRunning ? 'PAUSAR' : 'INICIAR'}</button>
+                                        </div>
+                                    </div>
+
+                                    <div className="pt-2 border-t border-white/10 space-y-2">
+                                        <label className="text-gray-400 font-bold text-xs uppercase"><i className="fa-solid fa-hourglass-half"></i> RELOJ CALENTAMIENTO/DESCANSO</label>
+                                        <div className="flex justify-between items-center bg-black/50 p-2 rounded">
+                                            <span className="font-mono font-bold text-xl">{formatTime(gameState.timeLeft)}</span>
+                                            <div className="flex gap-1">
+                                                <button onClick={() => pushUpdate({timeLeft: Math.max(0, gameState.timeLeft - 60)})} className="px-2 py-1 bg-gray-700 rounded text-xs">-1m</button>
+                                                <button onClick={() => pushUpdate({timeLeft: gameState.timeLeft + 60})} className="px-2 py-1 bg-gray-700 rounded text-xs">+1m</button>
+                                                <button onClick={() => pushUpdate({timeLeft: 300, isTimerRunning: false})} className="px-2 py-1 bg-gray-700 border border-white/20 rounded text-xs">5m</button>
+                                                <button onClick={() => pushUpdate({isTimerRunning: !gameState.isTimerRunning})} className={`px-3 py-1 rounded text-xs font-bold ${gameState.isTimerRunning ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>{gameState.isTimerRunning ? 'PAUSA' : 'PLAY'}</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Puntuaciones */}
+                                <div className={`space-y-4 transition-opacity ${gameState.activeView !== 'scoreboard' ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
+                                    <div className="flex justify-between items-center border-b border-white/10 pb-2">
+                                        <label className="text-gray-400 font-bold text-xs uppercase">PUNTOS Y SETS</label>
+                                        <button onClick={() => pushUpdate({isTieBreak: !gameState.isTieBreak})} className={`text-xs px-3 py-1 rounded font-bold border transition-all ${gameState.isTieBreak ? 'bg-red-600 border-red-500 text-white animate-pulse' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>MODO TIE-BREAK</button>
+                                    </div>
+                                    
+                                    {[1, 2].map((num) => {
+                                        const teamKey = num === 1 ? 'team1' : 'team2';
+                                        const team = gameState[teamKey];
+                                        return (
+                                            <div key={`ctrl-t${num}`} className="bg-black/40 p-3 rounded-lg border border-white/5 space-y-3 relative overflow-hidden">
+                                                {gameState.server === num && <div className="absolute top-0 left-0 w-1 h-full bg-yellow-400"></div>}
+                                                <div className="flex items-start gap-2 pl-2">
+                                                    <div className="flex-1 space-y-1">
+                                                        <input type="text" value={team.p1} onChange={e => pushUpdate({ [teamKey]: { ...team, p1: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full px-2 py-1 text-xs uppercase rounded" placeholder="Jugador 1"/>
+                                                        <input type="text" value={team.p2} onChange={e => pushUpdate({ [teamKey]: { ...team, p2: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full px-2 py-1 text-xs uppercase rounded" placeholder="Jugador 2"/>
+                                                    </div>
+                                                    <button onClick={() => pushUpdate({server: num})} className={`text-[10px] px-2 py-2 rounded font-bold shrink-0 h-full ${gameState.server === num ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-400'}`}>SAQUE</button>
+                                                </div>
+                                                
+                                                <div className="grid grid-cols-2 gap-3 pl-2">
+                                                    <div className="bg-white/5 p-2 rounded text-center">
+                                                        <span className={`text-xs block mb-1 font-bold ${gameState.isTieBreak ? 'text-red-400' : 'text-gray-400'}`}>Pts ({gameState.isTieBreak ? team.tbPoints : team.points})</span>
+                                                        <div className="flex gap-1">
+                                                            <button onClick={() => handlePoints(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-minus text-[12px]"></i></button>
+                                                            <button onClick={() => handlePoints(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-plus text-[12px]"></i></button>
+                                                        </div>
+                                                    </div>
+                                                    <div className="bg-white/5 p-2 rounded text-center">
+                                                        <span className="text-gray-400 text-xs block mb-1 font-bold">Set {gameState.currentSet + 1} ({team.sets[gameState.currentSet]})</span>
+                                                        <div className="flex gap-1">
+                                                            <button onClick={() => updateGames(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-minus text-[12px]"></i></button>
+                                                            <button onClick={() => updateGames(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-plus text-[12px]"></i></button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                    <div className="flex gap-1">
+                                        {[0, 1, 2].map(s => (
+                                            <button key={s} onClick={() => pushUpdate({currentSet: s})} className={`flex-1 py-1.5 text-xs font-bold rounded ${gameState.currentSet === s ? 'bg-white text-black' : 'bg-gray-800 text-gray-400'}`}>SET {s + 1}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="text-center opacity-50 pt-4">
+                                    <img src="https://i.imgur.com/FnYqHyv.png" alt="NovaBit" className="h-6 mx-auto mb-1 object-contain" />
+                                    <p className="text-[7px] uppercase tracking-widest">NovaBit Media Agency</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* VISTAS PÚBLICAS (MARCADOR / CALENTAMIENTO / SPONSOR) */}
                     <div className="relative w-full h-screen flex flex-col justify-center items-center z-10 px-8 pb-14">
                         
-                        {/* --- VISTA: MARCADOR --- */}
+                        {/* 1. SCOREBOARD */}
                         <div className={`w-full max-w-6xl transition-all duration-700 absolute flex flex-col justify-center ${gameState.activeView === 'scoreboard' ? 'opacity-100 scale-100 z-10' : 'opacity-0 scale-95 pointer-events-none z-0'}`}>
-                            
-                            {/* HEADER PREMIUM */}
+                            {/* HEADER */}
                             <div className="mb-6 flex justify-between items-end border-b border-white/20 pb-4 relative">
                                 <div className="flex items-center gap-4">
                                     {gameState.tournamentLogo ? (
-                                        <img src={gameState.tournamentLogo} alt="Logo Torneo" className="h-16 w-16 object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]" />
+                                        <img src={gameState.tournamentLogo} className="h-16 w-16 object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]" />
                                     ) : (
                                         <i className={`fa-solid fa-trophy text-[40px] ${activeTheme.text}`}></i>
                                     )}
@@ -619,7 +520,6 @@
                                     </div>
                                 </div>
                                 
-                                {/* Reloj de Partido */}
                                 <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
                                     <span className="text-[10px] text-gray-500 font-bold tracking-[0.4em] uppercase mb-1">TIEMPO MATCH</span>
                                     <div className="bg-black/60 backdrop-blur-md border border-white/10 px-6 py-1 rounded-full text-white font-mono font-bold text-xl tracking-widest shadow-inner">
@@ -627,39 +527,40 @@
                                     </div>
                                 </div>
 
-                                <div className="text-right flex flex-col items-end gap-2">
+                                <div className="text-right">
                                     <div className={`inline-block border border-white/20 px-6 py-2 bg-white/5 backdrop-blur-md font-bold tracking-widest text-sm ${activeTheme.text} ${activeTheme.shadow}`}>
                                         {gameState.category}
                                     </div>
                                 </div>
                             </div>
 
-                            {/* ALERTA TV FLASH */}
+                            {/* ALERTAS TV */}
                             <div className={`w-full overflow-hidden transition-all duration-500 ease-out flex justify-center ${gameState.tvAlert ? 'max-h-24 mb-4 opacity-100' : 'max-h-0 opacity-0 mb-0'}`}>
-                                <div className={`w-full text-center py-2 border-y ${getAlertConfig(gameState.tvAlert).border} bg-gradient-to-r ${getAlertConfig(gameState.tvAlert).bg}`}>
-                                    <span className={`font-black tracking-[0.5em] text-2xl uppercase ${getAlertConfig(gameState.tvAlert).text}`}>
-                                        {gameState.tvAlert}
-                                    </span>
-                                </div>
+                                {gameState.tvAlert && (() => {
+                                    const a = gameState.tvAlert;
+                                    let bg = 'from-transparent via-gray-600/80 to-transparent', b = 'border-gray-500', t = 'text-white';
+                                    if(a === 'PUNTO DE ORO') { bg = 'from-transparent via-yellow-600/80 to-transparent'; b = 'border-yellow-400'; t = 'text-yellow-400 animate-pulse drop-shadow-[0_0_10px_rgba(250,204,21,0.8)]'; }
+                                    if(a === 'SET POINT') { bg = 'from-transparent via-orange-600/80 to-transparent'; b = 'border-orange-500'; t = 'text-orange-400 animate-pulse drop-shadow-[0_0_10px_rgba(249,115,22,0.8)]'; }
+                                    if(a === 'MATCH POINT') { bg = 'from-transparent via-red-600/80 to-transparent'; b = 'border-red-500'; t = 'text-red-400 animate-pulse drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]'; }
+                                    if(a === 'TOURNAMENT POINT') { bg = 'from-transparent via-amber-600/90 to-transparent'; b = 'border-amber-300 shadow-[0_0_30px_rgba(251,191,36,0.6)]'; t = 'bg-clip-text text-transparent bg-gradient-to-r from-yellow-200 via-amber-400 to-yellow-200 animate-tournament-point text-3xl'; }
+                                    return (
+                                        <div className={`w-full text-center py-2 border-y ${b} bg-gradient-to-r ${bg}`}>
+                                            <span className={`font-black tracking-[0.5em] text-2xl uppercase ${t}`}>{a}</span>
+                                        </div>
+                                    )
+                                })()}
                             </div>
 
-                            {/* TABLA DE RESULTADOS ESTILO TV */}
+                            {/* TABLA PRINCIPAL */}
                             <div className="border border-white/10 bg-black/50 backdrop-blur-2xl rounded-xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
-                                {/* Cabecera Columnas */}
                                 <div className="grid grid-cols-[1fr_auto_auto_auto_130px] gap-1 border-b border-white/10 bg-black/60 text-gray-500 text-xs font-bold tracking-[0.2em] p-2 pr-4 text-center items-center">
-                                    <div className="text-left pl-14">JUGADORES</div>
-                                    <div className="w-16">1</div>
-                                    <div className="w-16">2</div>
-                                    <div className="w-16">3</div>
-                                    <div className={gameState.isTieBreak ? 'text-red-500 animate-pulse' : activeTheme.text}>
-                                        {gameState.isTieBreak ? 'TIE BREAK' : 'PTS'}
-                                    </div>
+                                    <div className="text-left pl-14">JUGADORES</div><div className="w-16">1</div><div className="w-16">2</div><div className="w-16">3</div>
+                                    <div className={gameState.isTieBreak ? 'text-red-500 animate-pulse' : activeTheme.text}>{gameState.isTieBreak ? 'TIE BREAK' : 'PTS'}</div>
                                 </div>
 
-                                {/* Filas de Equipos */}
                                 {[1, 2].map(num => {
                                     const team = num === 1 ? gameState.team1 : gameState.team2;
-                                    const otherTeam = num === 1 ? gameState.team2 : gameState.team1;
+                                    const other = num === 1 ? gameState.team2 : gameState.team1;
                                     return (
                                         <div key={`row-${num}`} className={`grid grid-cols-[1fr_auto_auto_auto_130px] gap-1 items-stretch group ${num === 1 ? 'border-b border-white/5' : ''}`}>
                                             <div className="flex items-center px-4 py-4 gap-4 relative bg-gradient-to-r hover:from-white/5 to-transparent transition-colors">
@@ -671,13 +572,11 @@
                                                     <span className="text-xl md:text-2xl font-black tracking-widest uppercase text-white/90 leading-tight">{team.p2}</span>
                                                 </div>
                                             </div>
-                                            
                                             {[0, 1, 2].map(s => (
-                                                <div key={`t${num}-s${s}`} className={`flex items-center justify-center w-16 text-3xl font-bold border-l border-white/5 ${gameState.currentSet === s ? 'text-white bg-white/5' : 'text-gray-600'} ${team.sets[s] >= 6 && team.sets[s] > otherTeam.sets[s] ? 'text-white' : ''}`}>
+                                                <div key={`s${s}`} className={`flex items-center justify-center w-16 text-3xl font-bold border-l border-white/5 ${gameState.currentSet === s ? 'text-white bg-white/5' : 'text-gray-600'} ${team.sets[s] >= 6 && team.sets[s] > other.sets[s] ? 'text-white' : ''}`}>
                                                     {team.sets[s]}
                                                 </div>
                                             ))}
-
                                             <div className={`flex items-center justify-center text-6xl font-black tracking-tighter m-1 rounded-sm border-2 transition-all ${gameState.isTieBreak ? 'bg-red-600 border-red-400 text-white shadow-[0_0_20px_rgba(220,38,38,0.3)]' : 'bg-white border-transparent text-black'}`}>
                                                 {gameState.isTieBreak ? team.tbPoints : team.points}
                                             </div>
@@ -687,74 +586,54 @@
                             </div>
                         </div>
 
-                        {/* --- VISTA: CALENTAMIENTO --- */}
-                        <div className={`w-full max-w-5xl transition-all duration-700 absolute flex flex-col items-center justify-center ${gameState.activeView === 'warmup' ? 'opacity-100 scale-100 z-10' : 'opacity-0 scale-105 pointer-events-none z-0'}`}>
-                            <div className={`mb-8 border-b-4 ${activeTheme.border} pb-2`}><h2 className="text-3xl md:text-4xl font-bold tracking-[0.3em] text-gray-400 uppercase">Tiempo de</h2></div>
-                            <h1 className="text-7xl md:text-9xl font-black tracking-tighter uppercase bg-clip-text text-transparent bg-gradient-to-b from-white to-gray-500 mb-12 drop-shadow-2xl">Calentamiento</h1>
+                        {/* 2. CALENTAMIENTO / DESCANSO */}
+                        <div className={`w-full max-w-5xl transition-all duration-700 absolute flex flex-col items-center justify-center ${(gameState.activeView === 'warmup' || gameState.activeView === 'halftime') ? 'opacity-100 scale-100 z-10' : 'opacity-0 scale-105 pointer-events-none z-0'}`}>
+                            <div className={`mb-8 border-b-4 ${gameState.activeView === 'halftime' ? 'border-cyan-400' : activeTheme.border} pb-2`}><h2 className="text-3xl md:text-4xl font-bold tracking-[0.3em] text-gray-400 uppercase">Tiempo de</h2></div>
+                            <h1 className={`text-7xl md:text-9xl font-black tracking-tighter uppercase bg-clip-text text-transparent bg-gradient-to-b from-white ${gameState.activeView === 'halftime' ? 'to-cyan-500' : 'to-gray-500'} mb-12 drop-shadow-2xl`}>
+                                {gameState.activeView === 'halftime' ? 'Descanso' : 'Calentamiento'}
+                            </h1>
                             <div className="relative group">
-                                <div className={`absolute inset-0 ${activeTheme.bg1} blur-2xl opacity-50 group-hover:opacity-70 transition-opacity`}></div>
-                                <div className="relative bg-black/80 border border-white/20 backdrop-blur-xl px-20 py-10 rounded-2xl flex items-center justify-center">
-                                    <span className="text-8xl md:text-[12rem] font-mono font-black tracking-widest text-white leading-none">{formatTime(gameState.timeLeft)}</span>
+                                <div className={`absolute inset-0 ${gameState.activeView === 'halftime' ? 'bg-cyan-500 opacity-40' : activeTheme.bg1 + ' opacity-50'} blur-2xl group-hover:opacity-70 transition-opacity`}></div>
+                                <div className={`relative bg-black/80 border ${gameState.activeView === 'halftime' ? 'border-cyan-500/30 shadow-[0_0_50px_rgba(6,182,212,0.2)]' : 'border-white/20'} backdrop-blur-xl px-20 py-10 rounded-2xl flex items-center justify-center`}>
+                                    <span className={`text-8xl md:text-[12rem] font-mono font-black tracking-widest leading-none ${gameState.activeView === 'halftime' ? 'text-cyan-400' : 'text-white'}`}>{formatTime(gameState.timeLeft)}</span>
                                 </div>
                             </div>
                         </div>
 
-                        {/* --- VISTA: DESCANSO (ENTRETIEMPO) --- */}
-                        <div className={`w-full max-w-5xl transition-all duration-700 absolute flex flex-col items-center justify-center ${gameState.activeView === 'halftime' ? 'opacity-100 scale-100 z-10' : 'opacity-0 scale-105 pointer-events-none z-0'}`}>
-                            <div className={`mb-8 border-b-4 border-cyan-400 pb-2`}><h2 className="text-3xl md:text-4xl font-bold tracking-[0.3em] text-gray-400 uppercase">Tiempo de</h2></div>
-                            <h1 className="text-7xl md:text-9xl font-black tracking-tighter uppercase bg-clip-text text-transparent bg-gradient-to-b from-white to-cyan-500 mb-12 drop-shadow-2xl">Descanso</h1>
-                            <div className="relative group">
-                                <div className={`absolute inset-0 bg-cyan-500 blur-2xl opacity-40 group-hover:opacity-60 transition-opacity`}></div>
-                                <div className="relative bg-black/80 border border-cyan-500/30 backdrop-blur-xl px-20 py-10 rounded-2xl flex items-center justify-center shadow-[0_0_50px_rgba(6,182,212,0.2)]">
-                                    <span className="text-8xl md:text-[12rem] font-mono font-black tracking-widest text-cyan-400 leading-none">{formatTime(gameState.timeLeft)}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* --- VISTA: SPONSOR FULL SCREEN --- */}
+                        {/* 3. SPONSOR FULL (CON GLOBAL SPONSORS DE FIREBASE) */}
                         <div className={`w-full h-full transition-all duration-700 absolute flex items-center justify-center ${gameState.activeView === 'sponsor_full' ? 'opacity-100 scale-100 z-20' : 'opacity-0 scale-95 pointer-events-none z-0'}`}>
                             <div className="text-center space-y-12 w-full max-w-5xl p-20 bg-black/60 backdrop-blur-2xl border border-white/10 rounded-3xl relative overflow-hidden shadow-2xl">
                                 <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${activeTheme.gradient}`}></div>
-                                <h3 className="text-2xl font-bold tracking-[0.4em] text-gray-400 uppercase">Presentado por</h3>
-                                
+                                <h3 className="text-2xl font-bold tracking-[0.4em] text-gray-400 uppercase">Torneo Oficial</h3>
                                 <div className="h-72 w-full flex items-center justify-center relative">
-                                    {gameState.sponsorLogos && gameState.sponsorLogos.length > 0 ? (
-                                        gameState.sponsorLogos.map((logoUrl, idx) => (
-                                            <img
-                                                key={idx}
-                                                src={logoUrl}
-                                                alt="Sponsor Logo"
-                                                className={`absolute max-w-full max-h-full object-contain transition-opacity duration-1000 ${idx === currentLogoIdx ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
-                                            />
+                                    {globalSponsors && globalSponsors.length > 0 ? (
+                                        globalSponsors.map((url, idx) => (
+                                            <img key={idx} src={url} className={`absolute max-w-full max-h-full object-contain transition-opacity duration-1000 ${idx === currentLogoIdx ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`} />
                                         ))
                                     ) : (
                                         <div className="text-5xl md:text-7xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white via-gray-200 to-gray-600 opacity-30">
-                                            AÑADE TUS LOGOS<br/>DESDE EL PANEL
+                                            AGENCIA NOVABIT
                                         </div>
                                     )}
                                 </div>
                             </div>
                         </div>
-
                     </div>
 
                     {/* BANNER INFERIOR DINÁMICO */}
                     <div className={`fixed bottom-0 left-0 w-full bg-black/90 backdrop-blur-xl border-t border-white/10 h-14 flex items-center px-8 transition-transform duration-500 z-30 ${gameState.activeView === 'sponsor_full' ? 'translate-y-full' : 'translate-y-0'}`}>
                         <div className="flex-1 overflow-hidden relative h-full">
-                            {gameState.sponsors.length > 0 && (
-                                <div key={currentSponsorIdx} className="absolute inset-0 flex items-center text-sm md:text-base font-bold tracking-[0.2em] text-white uppercase animate-[slideInRight_0.5s_ease-out_forwards]">
-                                    <i className={`fa-solid fa-chevron-right text-[20px] ${activeTheme.text} mr-4`}></i>
-                                    {gameState.sponsors[currentSponsorIdx]}
+                            {gameState.sponsors?.length > 0 && (
+                                <div key={currentSponsorIdx} className="absolute inset-0 flex items-center text-sm md:text-base font-bold tracking-[0.2em] uppercase animate-[slideInRight_0.5s_ease-out_forwards]">
+                                    <i className={`fa-solid fa-chevron-right text-[20px] ${activeTheme.text} mr-4`}></i> {gameState.sponsors[currentSponsorIdx]}
                                 </div>
                             )}
                         </div>
                         <div className="ml-4 pl-4 border-l border-white/20 flex items-center gap-6">
                             <div className="flex items-center gap-2 text-xs font-bold tracking-widest text-gray-500 uppercase shrink-0">
-                                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
-                                EN DIRECTO
+                                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div> EN DIRECTO
                             </div>
-                            {/* BRANDING NOVABIT - BANNER PÚBLICO */}
-                            <div className="hidden md:flex items-center gap-3 border-l border-white/20 pl-6 opacity-60 hover:opacity-100 transition-opacity shrink-0">
+                            <div className="hidden md:flex items-center gap-3 border-l border-white/20 pl-6 opacity-60">
                                 <img src="https://i.imgur.com/FnYqHyv.png" alt="NovaBit" className="h-6 object-contain" />
                                 <div className="flex flex-col justify-center">
                                     <span className="text-[8px] text-gray-300 font-bold tracking-[0.2em] uppercase leading-tight mb-0.5">Powered by NovaBit Media Agency</span>
@@ -767,9 +646,152 @@
             );
         }
 
-        // Renderizar la aplicación en el div con id "root"
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<PadelScoreboard />);
+        // --- COMPONENTE CMS (PANEL MAESTRO DE AGENCIA) ---
+        function AdminCMS({ db, user, appId, setAuthMode, globalSponsors }) {
+            const [tournaments, setTournaments] = useState([]);
+            const [clientName, setClientName] = useState('');
+            const [daysValid, setDaysValid] = useState(1);
+            const [newLogoUrl, setNewLogoUrl] = useState('');
+            const [customLogo, setCustomLogo] = useState(''); // NUEVO: Estado para el logo predefinido
+
+            useEffect(() => {
+                const unsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'tournaments'), (snap) => {
+                    const list = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                    setTournaments(list);
+                });
+                return () => unsub();
+            }, []);
+
+            const generatePin = () => Math.floor(100000 + Math.random() * 900000).toString();
+
+            const handleCreateTournament = async (e) => {
+                e.preventDefault();
+                if(!clientName) return;
+                const pin = generatePin();
+                const expiresAt = Date.now() + (daysValid * 24 * 60 * 60 * 1000); // Ms
+                
+                try {
+                    // Crea PIN en db
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tournaments', pin), { pin, clientName, expiresAt, createdAt: Date.now() });
+                    
+                    // Crea el State Base inyectando el logo predefinido
+                    const initialState = { ...DEFAULT_GAME_STATE, tournamentLogo: customLogo };
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', pin), { gameState: initialState });
+                    
+                    setClientName('');
+                    setCustomLogo(''); // Limpia el campo
+                } catch(e) { console.error("Error creando:", e); }
+            };
+
+            const handleDelete = async (pin) => {
+                if(!window.confirm('¿Borrar este torneo?')) return;
+                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tournaments', pin));
+                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', pin));
+            };
+
+            const addGlobalSponsor = async () => {
+                if(!newLogoUrl) return;
+                const updated = [...globalSponsors, newLogoUrl];
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'globalSponsors', 'main'), { logos: updated });
+                setNewLogoUrl('');
+            };
+
+            const removeGlobalSponsor = async (idx) => {
+                const updated = [...globalSponsors];
+                updated.splice(idx, 1);
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'globalSponsors', 'main'), { logos: updated });
+            };
+
+            return (
+                <div className="min-h-screen bg-gray-900 text-white p-8 font-sans">
+                    <div className="max-w-6xl mx-auto space-y-8">
+                        <div className="flex justify-between items-center border-b border-white/10 pb-4">
+                            <div className="flex items-center gap-4">
+                                <img src="https://i.imgur.com/FnYqHyv.png" className="h-10" />
+                                <div><h1 className="text-2xl font-black tracking-widest text-pink-500 uppercase">NovaBit CMS Master</h1><p className="text-gray-400 text-xs tracking-[0.2em]">PANEL DE GESTIÓN DE SERVICIOS</p></div>
+                            </div>
+                            <button onClick={() => setAuthMode('login')} className="bg-white/10 hover:bg-white/20 px-4 py-2 rounded font-bold text-xs"><i className="fa-solid fa-right-from-bracket"></i> CERRAR SESIÓN</button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            {/* CREAR LICENCIAS */}
+                            <div className="bg-black/40 p-6 rounded-xl border border-white/5 space-y-6">
+                                <h2 className="text-xl font-bold tracking-widest uppercase border-b border-white/10 pb-2"><i className="fa-solid fa-key text-pink-500"></i> Generar Licencia</h2>
+                                <form onSubmit={handleCreateTournament} className="space-y-4">
+                                    <div><label className="text-xs text-gray-400 font-bold">NOMBRE DEL CLIENTE/TORNEO</label><input type="text" value={clientName} onChange={e=>setClientName(e.target.value)} className="w-full bg-black/50 border border-white/20 rounded p-3 text-white mt-1" required/></div>
+                                    
+                                    {/* NUEVO CAMPO: Logo predefinido desde el CMS */}
+                                    <div><label className="text-xs text-gray-400 font-bold">LOGO DEL TORNEO (URL OPCIONAL)</label><input type="text" value={customLogo} onChange={e=>setCustomLogo(e.target.value)} placeholder="https://..." className="w-full bg-black/50 border border-white/20 rounded p-3 text-white mt-1"/></div>
+                                    
+                                    <div>
+                                        <label className="text-xs text-gray-400 font-bold">DURACIÓN DEL SERVICIO</label>
+                                        <select value={daysValid} onChange={e=>setDaysValid(Number(e.target.value))} className="w-full bg-black/50 border border-white/20 rounded p-3 text-white mt-1">
+                                            <option value={1}>1 Día (Prueba / Express)</option><option value={3}>3 Días (Fin de Semana)</option><option value={7}>7 Días (Semana Completa)</option><option value={30}>30 Días (Mensual)</option>
+                                        </select>
+                                    </div>
+                                    <button type="submit" className="w-full bg-pink-600 hover:bg-pink-500 text-white font-bold py-3 rounded tracking-widest uppercase">GENERAR PIN DE ACCESO</button>
+                                </form>
+                            </div>
+
+                            {/* SPONSORS GLOBALES */}
+                            <div className="bg-black/40 p-6 rounded-xl border border-white/5 space-y-6">
+                                <h2 className="text-xl font-bold tracking-widest uppercase border-b border-white/10 pb-2"><i className="fa-solid fa-images text-cyan-500"></i> Pantalla Sponsors Globales</h2>
+                                <div className="bg-blue-900/20 border border-blue-500/30 p-3 rounded text-xs text-blue-200">
+                                    <i className="fa-solid fa-circle-info"></i> <b>Tip Drive:</b> Si usas Google Drive, asegúrate que la imagen sea "Pública" y extrae el ID. El link debe ser: <br/><code className="text-pink-400">https://drive.google.com/uc?export=view&id=ID_AQUI</code>
+                                </div>
+                                <div className="flex gap-2">
+                                    <input type="text" value={newLogoUrl} onChange={e=>setNewLogoUrl(e.target.value)} placeholder="URL de la imagen..." className="flex-1 bg-black/50 border border-white/20 rounded px-3" />
+                                    <button onClick={addGlobalSponsor} className="bg-cyan-600 px-4 py-2 rounded font-bold hover:bg-cyan-500">AÑADIR</button>
+                                </div>
+                                <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
+                                    {globalSponsors.map((url, idx) => (
+                                        <div key={idx} className="flex justify-between items-center bg-white/5 p-2 rounded border border-white/5">
+                                            <div className="flex items-center gap-3"><img src={url} className="h-8 w-12 object-contain bg-black/50 rounded" /><span className="text-[10px] text-gray-400 truncate w-40">{url}</span></div>
+                                            <button onClick={() => removeGlobalSponsor(idx)} className="text-red-500 hover:text-red-400"><i className="fa-solid fa-trash"></i></button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* LISTA DE CLIENTES ACTIVOS */}
+                        <div className="bg-black/40 p-6 rounded-xl border border-white/5 space-y-4">
+                            <h2 className="text-xl font-bold tracking-widest uppercase border-b border-white/10 pb-2"><i className="fa-solid fa-users text-indigo-500"></i> Licencias Activas</h2>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-sm text-gray-400">
+                                    <thead className="text-xs text-white uppercase bg-white/5">
+                                        <tr><th className="p-3">PIN</th><th className="p-3">Cliente</th><th className="p-3">Creado</th><th className="p-3">Vence</th><th className="p-3 text-center">Estado</th><th className="p-3 text-right">Acción</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        {tournaments.map(t => {
+                                            const isExpired = Date.now() > t.expiresAt;
+                                            return (
+                                                <tr key={t.id} className="border-b border-white/5 hover:bg-white/5">
+                                                    <td className="p-3 font-mono font-bold text-pink-400">{t.pin}</td>
+                                                    <td className="p-3 text-white font-bold">{t.clientName}</td>
+                                                    <td className="p-3">{new Date(t.createdAt).toLocaleDateString()}</td>
+                                                    <td className="p-3">{new Date(t.expiresAt).toLocaleDateString()} {new Date(t.expiresAt).toLocaleTimeString()}</td>
+                                                    <td className="p-3 text-center">{isExpired ? <span className="bg-red-500/20 text-red-500 px-2 py-1 rounded text-xs">VENCIDO</span> : <span className="bg-green-500/20 text-green-500 px-2 py-1 rounded text-xs">ACTIVO</span>}</td>
+                                                    <td className="p-3 text-right">
+                                                        {/* NUEVO BOTÓN: Espiar/Controlar torneo */}
+                                                        <button onClick={() => window.open(`?pin=${t.pin}`, '_blank')} className="text-blue-400 hover:text-blue-300 mr-4" title="Entrar a controlar/ver torneo"><i className="fa-solid fa-eye"></i></button>
+                                                        <button onClick={() => handleDelete(t.pin)} className="text-red-500 hover:text-white" title="Eliminar torneo"><i className="fa-solid fa-trash"></i></button>
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })}
+                                        {tournaments.length === 0 && <tr><td colSpan="6" className="text-center p-6 italic">No hay torneos registrados.</td></tr>}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
