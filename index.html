@@ -176,7 +176,6 @@
             
             const [gameState, setGameState] = useState(DEFAULT_GAME_STATE);
             
-            // NUEVO: Referencia de Estado para evitar el "Bug del Reloj"
             const gameStateRef = useRef(gameState);
             
             const [globalSponsors, setGlobalSponsors] = useState([]);
@@ -203,10 +202,12 @@
                 initAuth();
                 const unsubscribe = onAuthStateChanged(auth, (u) => {
                     setUser(u);
-                    const urlParams = newSearchParams(window.location.search);
-                    const urlPin = urlParams.get('pin');
-                    if (urlParams.get('display') === 'true') setIsPublicMode(true);
-                    if (urlPin && u) validateAndLoadTournament(urlPin);
+                    try {
+                        const urlParams = new URLSearchParams(window.location.search);
+                        const urlPin = urlParams.get('pin');
+                        if (urlParams.get('display') === 'true') setIsPublicMode(true);
+                        if (urlPin && u) validateAndLoadTournament(urlPin);
+                    } catch (e) { console.error("Error validando la URL", e); }
                 });
                 return () => unsubscribe();
             }, []);
@@ -241,12 +242,11 @@
                 return () => unsub();
             }, [user, authMode, activePin]);
 
-            // CORRECCIÓN DEL BUG DEL RELOJ: Ahora usa el gameStateRef para no sobreescribir el estado
             useEffect(() => {
                 let intervalId = null;
                 if (authMode === 'scoreboard' && !isPublicMode && activePin && (gameState.isTimerRunning || gameState.isMatchClockRunning)) {
                     intervalId = setInterval(() => {
-                        const currentState = gameStateRef.current; // Leer siempre el estado MÁS RECIENTE
+                        const currentState = gameStateRef.current; 
                         let updates = {};
                         
                         if (currentState.isTimerRunning && currentState.timeLeft > 0) updates.timeLeft = currentState.timeLeft - 1;
@@ -274,10 +274,9 @@
                 }
             }, [gameState.activeView, globalSponsors.length]);
 
-            // Función maestra de actualización refactorizada
             const pushUpdate = async (updates) => {
                 if (!activePin || isPublicMode) return;
-                const currentState = gameStateRef.current; // Evita cierres de variables oxidadas
+                const currentState = gameStateRef.current;
                 const tempState = { ...currentState, ...updates };
                 
                 if (updates.team1 || updates.team2 || updates.isTieBreak || updates.currentSet) {
@@ -373,7 +372,6 @@
                 }
             };
 
-            // Cálculo de sets ganados para la UI Premium
             const calculateSetsWon = (teamNum) => {
                 let won = 0;
                 for(let i=0; i<3; i++) {
