@@ -141,9 +141,9 @@
             }, [banners]);
             if (!banners || banners.length === 0) return null;
             return (
-                <div className={`relative overflow-hidden ${className}`}>
+                <div className={`relative overflow-hidden flex items-center justify-center ${className}`}>
                     {banners.map((url, i) => (
-                        <img key={i} src={url} className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-1000 ${i === idx ? 'opacity-100 z-10' : 'opacity-0 z-0'}`} />
+                        <img key={i} src={url} className={`absolute w-full h-full object-contain transition-opacity duration-1000 ${i === idx ? 'opacity-100 z-10' : 'opacity-0 z-0'}`} />
                     ))}
                 </div>
             );
@@ -188,9 +188,8 @@
             const [pinInput, setPinInput] = useState('');
             const [authError, setAuthError] = useState('');
             
-            // Arquitectura de Doble Seguridad
-            const [activePin, setActivePin] = useState(null); // PIN del Operador
-            const [activeSpectatorId, setActiveSpectatorId] = useState(null); // ID de lectura pública
+            const [activePin, setActivePin] = useState(null); 
+            const [activeSpectatorId, setActiveSpectatorId] = useState(null); 
             
             const [gameState, setGameState] = useState(DEFAULT_GAME_STATE);
             const gameStateRef = useRef(gameState);
@@ -206,7 +205,6 @@
                 gameStateRef.current = gameState;
             }, [gameState]);
 
-            // Bloqueo Anti-Inspección
             useEffect(() => {
                 const block = (e) => { if(e.key === 'F12' || (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J')) || (e.ctrlKey && e.key === 'U')) e.preventDefault(); };
                 window.addEventListener('contextmenu', e => e.preventDefault());
@@ -214,7 +212,6 @@
                 return () => { window.removeEventListener('contextmenu', e => e.preventDefault()); window.removeEventListener('keydown', block); };
             }, []);
 
-            // Auth y Enrutamiento de URLs
             useEffect(() => {
                 const initAuth = async () => { try { await signInAnonymously(auth); } catch (e) { console.error("Error Auth:", e); } };
                 initAuth();
@@ -239,7 +236,6 @@
                 return () => unsub();
             }, [user]);
 
-            // Validación Link Espectador
             const checkSpectator = async (viewId) => {
                 try {
                     const docSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', viewId));
@@ -257,7 +253,6 @@
                 } catch (e) { setAuthError("Error de conexión."); }
             };
 
-            // Validación PIN Operador
             const validateAndLoadTournament = async (pinStr) => {
                 if (!user) return;
                 if (pinStr === MASTER_PIN) { setAuthMode('admin_cms'); return; }
@@ -269,7 +264,7 @@
                             setAuthError("Este código ha caducado.");
                         } else { 
                             setActivePin(pinStr); 
-                            setActiveSpectatorId(data.spectatorId); // Obtenemos la ID de la base de datos
+                            setActiveSpectatorId(data.spectatorId); 
                             setAuthMode('scoreboard'); 
                         }
                     } else setAuthError("PIN Inválido o torneo no encontrado.");
@@ -282,7 +277,6 @@
                 validateAndLoadTournament(pinInput); 
             };
 
-            // Listener del Scoreboard basado en spectatorId
             useEffect(() => {
                 if (!user || authMode !== 'scoreboard' || !activeSpectatorId) return;
                 const unsub = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', activeSpectatorId), (docSnap) => {
@@ -291,7 +285,6 @@
                 return () => unsub();
             }, [user, authMode, activeSpectatorId]);
 
-            // Cronómetros Locales
             useEffect(() => {
                 let intervalId = null;
                 if (authMode === 'scoreboard' && !isPublicMode && activePin && (gameState.isTimerRunning || gameState.isMatchClockRunning)) {
@@ -322,9 +315,7 @@
                 }
             }, [gameState.activeView, allFullSponsors.length]);
 
-            // Update Master a la base de datos
             const pushUpdate = async (updates) => {
-                // Solo se puede actualizar si eres operador (tienes activePin) y no estás en isPublicMode
                 if (!activePin || isPublicMode) return;
                 const currentState = gameStateRef.current;
                 const tempState = { ...currentState, ...updates };
@@ -342,11 +333,20 @@
                 const currentState = gameStateRef.current;
                 const teamKey = teamNum === 1 ? 'team1' : 'team2';
                 const team = currentState[teamKey];
+                let newServer = currentState.server;
+
                 if (currentState.isTieBreak) {
                     let newTb = team.tbPoints;
-                    if (direction === 'up') newTb++;
+                    if (direction === 'up') {
+                        newTb++;
+                        const totalTbPoints = newTb + currentState[teamNum === 1 ? 'team2' : 'team1'].tbPoints;
+                        // En Tie Break, el saque cambia cada suma IMPAR de puntos totales (1, 3, 5, 7...)
+                        if (totalTbPoints % 2 !== 0) {
+                            newServer = currentState.server === 1 ? 2 : 1;
+                        }
+                    }
                     if (direction === 'down' && newTb > 0) newTb--;
-                    pushUpdate({ [teamKey]: { ...team, tbPoints: newTb } });
+                    pushUpdate({ [teamKey]: { ...team, tbPoints: newTb }, server: newServer });
                 } else {
                     const curr = POINTS.indexOf(team.points);
                     let nIdx = curr;
@@ -361,9 +361,14 @@
                 const teamKey = teamNum === 1 ? 'team1' : 'team2';
                 const team = currentState[teamKey];
                 let newSets = [...team.sets];
-                if (direction === 'up' && newSets[currentState.currentSet] < 7) newSets[currentState.currentSet]++;
+                let newServer = currentState.server;
+
+                if (direction === 'up' && newSets[currentState.currentSet] < 7) {
+                    newSets[currentState.currentSet]++;
+                    newServer = currentState.server === 1 ? 2 : 1; // Alterna saque al ganar un game
+                }
                 if (direction === 'down' && newSets[currentState.currentSet] > 0) newSets[currentState.currentSet]--;
-                pushUpdate({ [teamKey]: { ...team, sets: newSets } });
+                pushUpdate({ [teamKey]: { ...team, sets: newSets }, server: newServer });
             };
 
             const resetPoints = (teamNum) => {
@@ -396,7 +401,8 @@
                     [teamKey]: { ...team, sets: newSets, tbPoints: 0, points: '0' },
                     [otherTeamKey]: { ...otherTeam, tbPoints: 0, points: '0' },
                     isTieBreak: false, 
-                    tvAlert: ''
+                    tvAlert: '',
+                    server: currentState.server === 1 ? 2 : 1 // Alternar tras ganar set
                 });
             };
 
@@ -533,7 +539,7 @@
 
                             <div className="flex-1 overflow-y-auto p-5 space-y-6 text-sm custom-scrollbar">
                                 <div className="grid grid-cols-2 gap-2">
-                                    <button onClick={() => window.open(`${window.location.pathname}?view=${activeSpectatorId}`, 'PantallaTV', 'width=1280,height=720')} className="py-2 bg-indigo-600 hover:bg-indigo-500 rounded font-bold flex items-center justify-center gap-2 transition-colors shadow-lg text-[11px] uppercase">
+                                    <button onClick={() => window.open(`${window.location.pathname}?pin=${activePin}&display=true`, 'PantallaTV', 'width=1280,height=720')} className="py-2 bg-indigo-600 hover:bg-indigo-500 rounded font-bold flex items-center justify-center gap-2 transition-colors shadow-lg text-[11px] uppercase">
                                         <i className="fa-solid fa-tv"></i> PANTALLA TV
                                     </button>
                                     <button onClick={copyPublicLink} className="py-2 bg-emerald-600 hover:bg-emerald-500 rounded font-bold flex items-center justify-center gap-2 transition-colors shadow-lg text-[11px] uppercase">
@@ -800,8 +806,8 @@
                             
                             {/* BANNERS SCOREBOARD (Flotante Inferior) */}
                             {gameState.tournamentBanners && gameState.tournamentBanners.length > 0 && (
-                                <div className="mt-6 flex justify-end w-full">
-                                    <BannerCarousel banners={gameState.tournamentBanners} className="w-80 h-24 bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl p-2 shadow-[0_10px_30px_rgba(0,0,0,0.5)]" />
+                                <div className="absolute bottom-20 right-8 z-20">
+                                    <BannerCarousel banners={gameState.tournamentBanners} className="w-80 h-24 bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.5)]" />
                                 </div>
                             )}
                         </div>
@@ -821,7 +827,7 @@
                             {/* BANNERS DESCANSO/CALENTAMIENTO */}
                             {gameState.tournamentBanners && gameState.tournamentBanners.length > 0 && (
                                 <div className="mt-12 z-20">
-                                    <BannerCarousel banners={gameState.tournamentBanners} className="w-[500px] h-32 bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl p-2 shadow-2xl" />
+                                    <BannerCarousel banners={gameState.tournamentBanners} className="w-[600px] h-40 bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl" />
                                 </div>
                             )}
                         </div>
@@ -905,12 +911,9 @@
             const [newLogoUrl, setNewLogoUrl] = useState('');
             const [lastGeneratedPin, setLastGeneratedPin] = useState(null);
             
-            // Estados para editar publicidades de un torneo específico
             const [editingTournament, setEditingTournament] = useState(null);
-            const [editBanners, setEditBanners] = useState([]);
-            const [editSponsors, setEditSponsors] = useState([]);
-            const [newBannerInput, setNewBannerInput] = useState('');
-            const [newSponsorInput, setNewSponsorInput] = useState('');
+            const [editBanners, setEditBanners] = useState('');
+            const [editSponsors, setEditSponsors] = useState('');
 
             useEffect(() => {
                 const unsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'tournaments'), (snap) => {
@@ -957,32 +960,50 @@
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'globalSponsors', 'main'), { logos: updated });
             };
 
-            // FUNCIONES DE EDICIÓN PER-TORNEO
+            // FUNCIONES DE EDICIÓN PER-TORNEO (AHORA CON TEXTAREA Y DRIVE AUTO-PARSER)
             const openEditAdvertising = async (t) => {
                 try {
-                    const docSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', t.spectatorId));
+                    // Fallback para torneos viejos sin spectatorId
+                    const targetId = t.spectatorId || t.pin;
+                    const docSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', targetId));
                     if (docSnap.exists()) {
                         const state = docSnap.data().gameState;
-                        setEditBanners(state.tournamentBanners || []);
-                        setEditSponsors(state.tournamentSponsors || []);
+                        setEditBanners(state.tournamentBanners?.join('\n') || '');
+                        setEditSponsors(state.tournamentSponsors?.join('\n') || '');
                         setEditingTournament(t);
+                    } else {
+                        alert("No se pudo cargar la info del torneo.");
                     }
                 } catch(e) { console.error("Error cargando torneo", e); }
+            };
+
+            const processUrls = (text) => {
+                return text.split('\n').map(u => u.trim()).filter(u => u).map(u => {
+                    // Extrae el ID de Drive automáticamente si pegas un enlace completo
+                    const driveMatch = u.match(/[-\w]{25,}/);
+                    if (u.includes('drive.google.com') && driveMatch) {
+                        return `https://drive.google.com/uc?export=view&id=${driveMatch[0]}`;
+                    }
+                    return u;
+                });
             };
 
             const saveAdvertising = async () => {
                 if (!editingTournament) return;
                 try {
-                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', editingTournament.spectatorId), {
-                        'gameState.tournamentBanners': editBanners,
-                        'gameState.tournamentSponsors': editSponsors
+                    const targetId = editingTournament.spectatorId || editingTournament.pin;
+                    const processedBanners = processUrls(editBanners);
+                    const processedSponsors = processUrls(editSponsors);
+
+                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', targetId), {
+                        'gameState.tournamentBanners': processedBanners,
+                        'gameState.tournamentSponsors': processedSponsors
                     });
                     setEditingTournament(null);
                     alert("Publicidad del torneo actualizada con éxito.");
                 } catch (e) { console.error("Error actualizando publicidad", e); }
             };
 
-            // INTERFAZ MODAL DE EDICIÓN DE TORNEO
             if (editingTournament) {
                 return (
                     <div className="h-screen overflow-y-auto custom-scrollbar bg-gray-900 text-white p-8 font-sans">
@@ -995,42 +1016,35 @@
                                 <button onClick={() => setEditingTournament(null)} className="bg-white/10 hover:bg-white/20 px-4 py-2 rounded font-bold text-xs"><i className="fa-solid fa-arrow-left"></i> VOLVER AL CMS</button>
                             </div>
 
+                            <div className="bg-blue-900/20 border border-blue-500/30 p-4 rounded text-xs text-blue-200">
+                                <i className="fa-solid fa-circle-info text-lg mb-2"></i><br/>
+                                <b>Importación Mágica desde Google Drive:</b> Selecciona todas las imágenes en tu carpeta de Google Drive, haz clic en "Obtener enlaces" y pégalos directamente en las cajas de texto de abajo (uno por línea). El sistema los convertirá automáticamente para que se vean en el marcador.
+                            </div>
+
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {/* BANNERS ROTATIVOS (CHICOS) */}
                                 <div className="bg-black/40 p-6 rounded-xl border border-white/5 space-y-4">
                                     <h2 className="text-sm font-tv-header tracking-widest uppercase border-b border-white/10 pb-2 text-pink-400"><i className="fa-regular fa-images"></i> Banners (Scoreboard/Descanso)</h2>
-                                    <div className="flex gap-2">
-                                        <input type="text" value={newBannerInput} onChange={e=>setNewBannerInput(e.target.value)} placeholder="URL imagen (Drive)..." className="flex-1 bg-black/50 border border-white/20 rounded px-2 text-xs" />
-                                        <button onClick={() => { if(newBannerInput) { setEditBanners([...editBanners, newBannerInput]); setNewBannerInput(''); } }} className="bg-pink-600 px-3 py-1 rounded font-bold hover:bg-pink-500 text-xs">AÑADIR</button>
-                                    </div>
-                                    <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar pr-2">
-                                        {editBanners.map((url, idx) => (
-                                            <div key={idx} className="flex justify-between items-center bg-white/5 p-2 rounded border border-white/5">
-                                                <div className="flex items-center gap-3"><img src={url} className="h-6 w-16 object-cover bg-black/50 rounded" /><span className="text-[10px] text-gray-400 truncate w-32">{url}</span></div>
-                                                <button onClick={() => setEditBanners(editBanners.filter((_, i) => i !== idx))} className="text-red-500 hover:text-red-400"><i className="fa-solid fa-trash"></i></button>
-                                            </div>
-                                        ))}
-                                    </div>
+                                    <p className="text-[10px] text-gray-500">Pega los enlaces aquí (uno por línea):</p>
+                                    <textarea 
+                                        value={editBanners} 
+                                        onChange={e => setEditBanners(e.target.value)} 
+                                        className="w-full h-48 bg-black/50 border border-white/20 rounded p-2 text-xs custom-scrollbar whitespace-nowrap overflow-x-auto"
+                                        placeholder="https://drive.google.com/file/d/ID1/view&#10;https://drive.google.com/file/d/ID2/view"
+                                    />
                                 </div>
 
-                                {/* SPONSORS FULL SCREEN */}
                                 <div className="bg-black/40 p-6 rounded-xl border border-white/5 space-y-4">
                                     <h2 className="text-sm font-tv-header tracking-widest uppercase border-b border-white/10 pb-2 text-cyan-400"><i className="fa-solid fa-expand"></i> Sponsors Pantalla Completa</h2>
-                                    <div className="flex gap-2">
-                                        <input type="text" value={newSponsorInput} onChange={e=>setNewSponsorInput(e.target.value)} placeholder="URL imagen (Drive)..." className="flex-1 bg-black/50 border border-white/20 rounded px-2 text-xs" />
-                                        <button onClick={() => { if(newSponsorInput) { setEditSponsors([...editSponsors, newSponsorInput]); setNewSponsorInput(''); } }} className="bg-cyan-600 px-3 py-1 rounded font-bold hover:bg-cyan-500 text-xs">AÑADIR</button>
-                                    </div>
-                                    <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar pr-2">
-                                        {editSponsors.map((url, idx) => (
-                                            <div key={idx} className="flex justify-between items-center bg-white/5 p-2 rounded border border-white/5">
-                                                <div className="flex items-center gap-3"><img src={url} className="h-6 w-10 object-contain bg-black/50 rounded" /><span className="text-[10px] text-gray-400 truncate w-32">{url}</span></div>
-                                                <button onClick={() => setEditSponsors(editSponsors.filter((_, i) => i !== idx))} className="text-red-500 hover:text-red-400"><i className="fa-solid fa-trash"></i></button>
-                                            </div>
-                                        ))}
-                                    </div>
+                                    <p className="text-[10px] text-gray-500">Pega los enlaces aquí (uno por línea):</p>
+                                    <textarea 
+                                        value={editSponsors} 
+                                        onChange={e => setEditSponsors(e.target.value)} 
+                                        className="w-full h-48 bg-black/50 border border-white/20 rounded p-2 text-xs custom-scrollbar whitespace-nowrap overflow-x-auto"
+                                        placeholder="https://drive.google.com/file/d/ID3/view&#10;https://drive.google.com/file/d/ID4/view"
+                                    />
                                 </div>
                             </div>
-                            <button onClick={saveAdvertising} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded tracking-widest uppercase font-tv-header text-lg shadow-lg">GUARDAR PUBLICIDAD DEL TORNEO</button>
+                            <button onClick={saveAdvertising} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded tracking-widest uppercase font-tv-header text-lg shadow-lg transition-transform hover:scale-[1.01]">GUARDAR PUBLICIDAD DEL TORNEO</button>
                         </div>
                     </div>
                 );
