@@ -316,6 +316,22 @@
                 pushUpdate({ [teamKey]: { ...team, sets: newSets } });
             };
 
+            const resetPoints = (teamNum) => {
+                const currentState = gameStateRef.current;
+                const teamKey = teamNum === 1 ? 'team1' : 'team2';
+                const team = currentState[teamKey];
+                pushUpdate({ [teamKey]: { ...team, points: '0', tbPoints: 0 } });
+            };
+
+            const resetGames = (teamNum) => {
+                const currentState = gameStateRef.current;
+                const teamKey = teamNum === 1 ? 'team1' : 'team2';
+                const team = currentState[teamKey];
+                let newSets = [...team.sets];
+                newSets[currentState.currentSet] = 0;
+                pushUpdate({ [teamKey]: { ...team, sets: newSets } });
+            };
+
             const addTickerMessage = () => {
                 const currentState = gameStateRef.current;
                 if(!newTickerMsg.trim()) return;
@@ -534,14 +550,20 @@
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-3 pl-2">
                                                     <div className="bg-white/5 p-2 rounded text-center">
-                                                        <span className={`text-xs block mb-1 font-bold ${gameState.isTieBreak ? 'text-red-400' : 'text-gray-400'}`}>Pts ({gameState.isTieBreak ? team.tbPoints : team.points})</span>
+                                                        <div className="flex justify-between items-center mb-1 px-1">
+                                                            <span className={`text-xs font-bold ${gameState.isTieBreak ? 'text-red-400' : 'text-gray-400'}`}>Pts ({gameState.isTieBreak ? team.tbPoints : team.points})</span>
+                                                            <button onClick={() => resetPoints(num)} className="text-gray-500 hover:text-white transition-colors" title="Reiniciar Puntos"><i className="fa-solid fa-rotate-left text-[10px]"></i></button>
+                                                        </div>
                                                         <div className="flex gap-1">
                                                             <button onClick={() => handlePoints(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-minus text-[12px]"></i></button>
                                                             <button onClick={() => handlePoints(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-plus text-[12px]"></i></button>
                                                         </div>
                                                     </div>
                                                     <div className="bg-white/5 p-2 rounded text-center">
-                                                        <span className="text-gray-400 text-xs block mb-1 font-bold">Set {gameState.currentSet + 1} ({team.sets[gameState.currentSet]})</span>
+                                                        <div className="flex justify-between items-center mb-1 px-1">
+                                                            <span className="text-gray-400 text-xs font-bold">Games ({team.sets[gameState.currentSet]})</span>
+                                                            <button onClick={() => resetGames(num)} className="text-gray-500 hover:text-white transition-colors" title="Reiniciar Games"><i className="fa-solid fa-rotate-left text-[10px]"></i></button>
+                                                        </div>
                                                         <div className="flex gap-1">
                                                             <button onClick={() => updateGames(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-minus text-[12px]"></i></button>
                                                             <button onClick={() => updateGames(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-plus text-[12px]"></i></button>
