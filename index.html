@@ -196,7 +196,11 @@
             
             const [globalSponsors, setGlobalSponsors] = useState([]);
             const [showControls, setShowControls] = useState(false);
-            const [isPublicMode, setIsPublicMode] = useState(false);
+            
+            // Garantizamos que el modo espectador se active desde el inicio si existe "?view="
+            const initialIsPublic = !!new URLSearchParams(window.location.search).get('view');
+            const [isPublicMode, setIsPublicMode] = useState(initialIsPublic);
+            
             const [currentSponsorIdx, setCurrentSponsorIdx] = useState(0);
             const [currentLogoIdx, setCurrentLogoIdx] = useState(0);
             const [newTickerMsg, setNewTickerMsg] = useState('');
@@ -275,6 +279,18 @@
                 e.preventDefault(); 
                 setAuthError(''); 
                 validateAndLoadTournament(pinInput); 
+            };
+
+            // FUNCIÓN DE CIERRE DE SESIÓN SEGURO
+            const handleLogout = () => {
+                setAuthMode('login');
+                setPinInput('');
+                setActivePin(null);
+                setActiveSpectatorId(null);
+                setIsPublicMode(false);
+                // Limpia la URL para evitar reingresos fantasma
+                const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+                window.history.replaceState({path:newUrl},'',newUrl);
             };
 
             useEffect(() => {
@@ -511,7 +527,7 @@
                 );
             }
 
-            if (authMode === 'admin_cms') return <AdminCMS db={db} user={user} appId={appId} setAuthMode={setAuthMode} globalSponsors={globalSponsors} />;
+            if (authMode === 'admin_cms') return <AdminCMS db={db} user={user} appId={appId} handleLogout={handleLogout} globalSponsors={globalSponsors} />;
 
             const activeTheme = THEMES[gameState.theme] || THEMES.pink;
             const isPuntoDeOro = gameState.tvAlert === 'PUNTO DE ORO';
@@ -531,15 +547,16 @@
                         <div className={`fixed right-0 top-0 h-full w-[450px] bg-gray-900/95 backdrop-blur-xl border-l border-white/10 z-50 transform transition-transform duration-500 ease-in-out ${showControls ? 'translate-x-0' : 'translate-x-full'} shadow-2xl flex flex-col`} onContextMenu={(e) => e.stopPropagation()}>
                             <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/80">
                                 <h2 className={`text-xl font-tv-header tracking-widest ${activeTheme.text} flex items-center gap-2`}><i className="fa-solid fa-gamepad"></i> OPERADOR</h2>
-                                <div className="flex gap-4 items-center">
+                                <div className="flex gap-3 items-center">
                                     <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-1 rounded border border-green-500/30 font-tv-numbers font-bold">PIN: {activePin}</span>
-                                    <button onClick={() => setShowControls(false)} className="text-gray-400 hover:text-white"><i className="fa-solid fa-xmark text-[24px]"></i></button>
+                                    <button onClick={handleLogout} className="text-red-400 hover:text-red-300 text-xs font-bold transition-colors" title="Cerrar Sesión"><i className="fa-solid fa-power-off text-[18px]"></i></button>
+                                    <button onClick={() => setShowControls(false)} className="text-gray-400 hover:text-white ml-2"><i className="fa-solid fa-xmark text-[24px]"></i></button>
                                 </div>
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-5 space-y-6 text-sm custom-scrollbar">
                                 <div className="grid grid-cols-2 gap-2">
-                                    <button onClick={() => window.open(`${window.location.pathname}?pin=${activePin}&display=true`, 'PantallaTV', 'width=1280,height=720')} className="py-2 bg-indigo-600 hover:bg-indigo-500 rounded font-bold flex items-center justify-center gap-2 transition-colors shadow-lg text-[11px] uppercase">
+                                    <button onClick={() => window.open(`${window.location.pathname}?view=${activeSpectatorId}`, 'PantallaTV', 'width=1280,height=720')} className="py-2 bg-indigo-600 hover:bg-indigo-500 rounded font-bold flex items-center justify-center gap-2 transition-colors shadow-lg text-[11px] uppercase">
                                         <i className="fa-solid fa-tv"></i> PANTALLA TV
                                     </button>
                                     <button onClick={copyPublicLink} className="py-2 bg-emerald-600 hover:bg-emerald-500 rounded font-bold flex items-center justify-center gap-2 transition-colors shadow-lg text-[11px] uppercase">
@@ -718,7 +735,7 @@
                             <div className="mb-6 flex justify-between items-end border-b border-white/20 pb-4 relative">
                                 <div className="flex items-center gap-6">
                                     {gameState.tournamentLogo ? (
-                                        <img src={gameState.tournamentLogo} className="h-24 w-auto max-w-[150px] object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]" />
+                                        <img src={gameState.tournamentLogo} className="h-32 w-auto max-w-[240px] object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]" />
                                     ) : (
                                         <i className={`fa-solid fa-trophy text-[60px] ${activeTheme.text} drop-shadow-lg`}></i>
                                     )}
@@ -807,7 +824,7 @@
                             {/* BANNERS SCOREBOARD (Flotante Inferior) */}
                             {gameState.tournamentBanners && gameState.tournamentBanners.length > 0 && (
                                 <div className="absolute bottom-20 right-8 z-20">
-                                    <BannerCarousel banners={gameState.tournamentBanners} className="w-80 h-24 bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.5)]" />
+                                    <BannerCarousel banners={gameState.tournamentBanners} className="w-96 h-28 bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.5)]" />
                                 </div>
                             )}
                         </div>
@@ -827,7 +844,7 @@
                             {/* BANNERS DESCANSO/CALENTAMIENTO */}
                             {gameState.tournamentBanners && gameState.tournamentBanners.length > 0 && (
                                 <div className="mt-12 z-20">
-                                    <BannerCarousel banners={gameState.tournamentBanners} className="w-[600px] h-40 bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl" />
+                                    <BannerCarousel banners={gameState.tournamentBanners} className="w-[600px] h-48 bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl" />
                                 </div>
                             )}
                         </div>
@@ -903,7 +920,7 @@
         }
 
         // --- COMPONENTE CMS (PANEL MAESTRO DE AGENCIA) ---
-        function AdminCMS({ db, user, appId, setAuthMode, globalSponsors }) {
+        function AdminCMS({ db, user, appId, handleLogout, globalSponsors }) {
             const [tournaments, setTournaments] = useState([]);
             const [clientName, setClientName] = useState('');
             const [daysValid, setDaysValid] = useState(1);
@@ -1058,7 +1075,7 @@
                                 <img src="https://i.imgur.com/FnYqHyv.png" className="h-10" />
                                 <div><h1 className="text-2xl font-tv-header tracking-widest text-pink-500 uppercase">NovaBit CMS Master</h1><p className="text-gray-400 text-xs tracking-[0.2em] font-tv-header">PANEL DE GESTIÓN DE SERVICIOS</p></div>
                             </div>
-                            <button onClick={() => setAuthMode('login')} className="bg-white/10 hover:bg-white/20 px-4 py-2 rounded font-bold text-xs"><i className="fa-solid fa-right-from-bracket"></i> CERRAR SESIÓN</button>
+                            <button onClick={handleLogout} className="bg-white/10 hover:bg-red-500 hover:text-white transition-colors px-4 py-2 rounded font-bold text-xs"><i className="fa-solid fa-power-off"></i> CERRAR SESIÓN</button>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
