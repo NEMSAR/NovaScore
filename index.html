@@ -59,12 +59,23 @@
             z-index: 10;
         }
 
-        /* Utilidad para el input de PIN premium */
-        input[type="password"]::-ms-reveal,
-        input[type="password"]::-ms-clear {
-            display: none;
+        /* Animaciones para los Campeones (Winner Screen) */
+        @keyframes floatUp {
+            0% { transform: translateY(100vh) scale(0.5); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { transform: translateY(-20vh) scale(1.2); opacity: 0; }
+        }
+        .particle {
+            position: absolute;
+            background: radial-gradient(circle, rgba(251,191,36,1) 0%, rgba(251,191,36,0) 70%);
+            border-radius: 50%;
+            animation: floatUp linear infinite;
         }
 
+        /* Utilidad para el input de PIN premium */
+        input[type="password"]::-ms-reveal,
+        input[type="password"]::-ms-clear { display: none; }
         body { margin: 0; overflow: hidden; background-color: #0a0a0c; }
     </style>
 </head>
@@ -138,8 +149,10 @@
             );
         };
 
+        // --- COMPONENTE BANNERS PUBLICITARIOS (CON FALLBACK) ---
         function BannerCarousel({ banners, className }) {
             const [idx, setIdx] = useState(0);
+            
             useEffect(() => {
                 if (!banners || banners.length <= 1) return;
                 const i = setInterval(() => setIdx(p => (p + 1) % banners.length), 6000);
@@ -151,11 +164,37 @@
             return (
                 <div className={`relative overflow-hidden flex items-center justify-center ${className}`}>
                     {banners.map((url, i) => (
-                        <img key={i} src={url} className={`absolute w-full h-full object-contain transition-opacity duration-1000 ${i === idx ? 'opacity-100 z-10' : 'opacity-0 z-0'}`} />
+                        <img 
+                            key={i} 
+                            src={url} 
+                            // Fallback mágico: Si Google Drive bloquea la imagen, muestra el logo de NovaBit para no dejar un espacio vacío feo
+                            onError={(e) => { e.target.onerror = null; e.target.src = 'https://i.imgur.com/FnYqHyv.png'; }}
+                            className={`absolute w-full h-full object-contain transition-opacity duration-1000 ${i === idx ? 'opacity-100 z-10' : 'opacity-0 z-0'}`} 
+                        />
                     ))}
                 </div>
             );
         }
+
+        // --- COMPONENTE PARTÍCULAS DORADAS PARA EL GANADOR ---
+        const WinnerParticles = () => {
+            const particles = Array.from({ length: 30 }).map((_, i) => ({
+                id: i,
+                left: `${Math.random() * 100}%`,
+                width: `${Math.random() * 80 + 20}px`,
+                height: `${Math.random() * 80 + 20}px`,
+                animationDuration: `${Math.random() * 3 + 2}s`,
+                animationDelay: `${Math.random() * 2}s`
+            }));
+
+            return (
+                <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+                    {particles.map(p => (
+                        <div key={p.id} className="particle" style={{ left: p.left, width: p.width, height: p.height, animationDuration: p.animationDuration, animationDelay: p.animationDelay }}></div>
+                    ))}
+                </div>
+            );
+        };
 
         const calculateAutoAlert = (state) => {
             const { team1, team2, currentSet, isTieBreak, tournamentPhase } = state;
@@ -205,7 +244,6 @@
             const [globalSponsors, setGlobalSponsors] = useState([]);
             const [showControls, setShowControls] = useState(false);
             
-            // Garantizamos que el modo espectador se active desde el inicio si existe "?view="
             const initialIsPublic = !!new URLSearchParams(window.location.search).get('view');
             const [isPublicMode, setIsPublicMode] = useState(initialIsPublic);
             
@@ -289,7 +327,6 @@
                 validateAndLoadTournament(pinInput); 
             };
 
-            // FUNCIÓN DE CIERRE DE SESIÓN SEGURO
             const handleLogout = () => {
                 setAuthMode('login');
                 setPinInput(''); // Borra el PIN del input
@@ -297,7 +334,6 @@
                 setActiveSpectatorId(null);
                 setIsPublicMode(false);
                 setShowControls(false);
-                // Limpia la URL para evitar reingresos
                 const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
                 window.history.replaceState({path:newUrl},'',newUrl);
             };
@@ -365,7 +401,6 @@
                     if (direction === 'up') {
                         newTb++;
                         const totalTbPoints = newTb + currentState[teamNum === 1 ? 'team2' : 'team1'].tbPoints;
-                        // En Tie Break, el saque cambia cada suma IMPAR de puntos totales (1, 3, 5, 7...)
                         if (totalTbPoints % 2 !== 0) {
                             newServer = currentState.server === 1 ? 2 : 1;
                         }
@@ -390,7 +425,7 @@
 
                 if (direction === 'up' && newSets[currentState.currentSet] < 7) {
                     newSets[currentState.currentSet]++;
-                    newServer = currentState.server === 1 ? 2 : 1; // Alterna saque al ganar un game
+                    newServer = currentState.server === 1 ? 2 : 1; 
                 }
                 if (direction === 'down' && newSets[currentState.currentSet] > 0) newSets[currentState.currentSet]--;
                 pushUpdate({ [teamKey]: { ...team, sets: newSets }, server: newServer });
@@ -427,7 +462,7 @@
                     [otherTeamKey]: { ...otherTeam, tbPoints: 0, points: '0' },
                     isTieBreak: false, 
                     tvAlert: '',
-                    server: currentState.server === 1 ? 2 : 1 // Alternar tras ganar set
+                    server: currentState.server === 1 ? 2 : 1 
                 });
             };
 
@@ -465,7 +500,8 @@
                     isTieBreak: false,
                     tvAlert: '',
                     matchClock: 0,
-                    isMatchClockRunning: false
+                    isMatchClockRunning: false,
+                    activeView: 'scoreboard'
                 });
             };
 
@@ -507,7 +543,6 @@
                     <div className="h-screen overflow-y-auto custom-scrollbar flex items-center justify-center relative bg-[#050505]">
                         <BackgroundFX activeView="scoreboard" themeKey="pink" />
                         
-                        {/* Overlay Oscuro para contrastar la tarjeta */}
                         <div className="absolute inset-0 bg-black/60 z-0"></div>
 
                         <div className="z-10 bg-white/5 backdrop-blur-3xl p-12 rounded-[2.5rem] border border-white/10 shadow-[0_0_100px_rgba(219,39,119,0.15)] w-full max-w-lg text-center flex flex-col items-center">
@@ -559,6 +594,7 @@
 
             const activeTheme = THEMES[gameState.theme] || THEMES.pink;
             const isPuntoDeOro = gameState.tvAlert === 'PUNTO DE ORO';
+            const winnerTeam = calculateSetsWon(1) > calculateSetsWon(2) ? gameState.team1 : (calculateSetsWon(2) > calculateSetsWon(1) ? gameState.team2 : null);
 
             return (
                 <div className="min-h-screen text-white relative flex flex-col overflow-hidden">
@@ -612,12 +648,19 @@
                                     </div>
                                 </div>
 
-                                {/* Control de Vistas */}
+                                {/* Control de Vistas (AÑADIDA VISTA GANADOR) */}
                                 <div className="space-y-2">
                                     <label className="text-gray-400 font-bold tracking-wider text-xs uppercase">CONTROL DE PANTALLA TV</label>
-                                    <div className="grid grid-cols-5 gap-1.5">
-                                        {[{ id: 'scoreboard', icon: 'fa-desktop', label: 'SCORE' }, { id: 'warmup', icon: 'fa-fire', label: 'CALENT.' }, { id: 'halftime', icon: 'fa-mug-hot', label: 'DESC.' }, { id: 'sponsor_full', icon: 'fa-bolt', label: 'SPONS' }, { id: 'history', icon: 'fa-list-ul', label: 'HIST.' }].map(v => (
+                                    <div className="grid grid-cols-3 gap-1.5 mb-1.5">
+                                        {[{ id: 'scoreboard', icon: 'fa-desktop', label: 'SCORE' }, { id: 'warmup', icon: 'fa-fire', label: 'CALENT.' }, { id: 'halftime', icon: 'fa-mug-hot', label: 'DESC.' }].map(v => (
                                             <button key={v.id} onClick={() => pushUpdate({activeView: v.id})} className={`py-2 rounded border font-bold flex flex-col items-center gap-1 transition-all text-[9px] ${gameState.activeView === v.id ? 'bg-white text-black border-white' : 'border-white/10 text-gray-400 hover:bg-white/5'}`}>
+                                                <i className={`fa-solid ${v.icon} text-[12px]`}></i> {v.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-1.5">
+                                        {[{ id: 'sponsor_full', icon: 'fa-bolt', label: 'SPONSORS' }, { id: 'history', icon: 'fa-list-ul', label: 'HISTORIAL' }, { id: 'winner', icon: 'fa-trophy', label: 'GANADORES' }].map(v => (
+                                            <button key={v.id} onClick={() => pushUpdate({activeView: v.id})} className={`py-2 rounded border font-bold flex flex-col items-center gap-1 transition-all text-[9px] ${gameState.activeView === v.id ? 'bg-yellow-500 text-black border-yellow-500' : 'border-white/10 text-gray-400 hover:bg-white/5'}`}>
                                                 <i className={`fa-solid ${v.icon} text-[12px]`}></i> {v.label}
                                             </button>
                                         ))}
@@ -849,11 +892,14 @@
                                     );
                                 })}
                             </div>
-                        </div>
 
-                        {/* BANNERS SCOREBOARD (Flotante Inferior - AHORA TOTALMENTE INDEPENDIENTE) */}
-                        <div className={`fixed bottom-20 right-8 z-[100] transition-all duration-700 ${gameState.activeView === 'scoreboard' && gameState.tournamentBanners && gameState.tournamentBanners.length > 0 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10 pointer-events-none'}`}>
-                            <BannerCarousel banners={gameState.tournamentBanners} className="w-[400px] h-[120px] bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.5)]" />
+                            {/* BANNERS SCOREBOARD FLOTANTES */}
+                            {gameState.tournamentBanners && gameState.tournamentBanners.length > 0 && (
+                                <div className="absolute -bottom-24 right-0 z-[100] transition-all duration-700">
+                                    <BannerCarousel banners={gameState.tournamentBanners} className="w-[450px] h-[140px] bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)]" />
+                                </div>
+                            )}
+
                         </div>
 
                         {/* 2. CALENTAMIENTO / DESCANSO */}
@@ -884,7 +930,7 @@
                                 <div className="h-72 w-full flex items-center justify-center relative">
                                     {allFullSponsors && allFullSponsors.length > 0 ? (
                                         allFullSponsors.map((url, idx) => (
-                                            <img key={idx} src={url} className={`absolute max-w-full max-h-full object-contain transition-opacity duration-1000 ${idx === currentLogoIdx ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`} />
+                                            <img key={idx} src={url} onError={(e) => { e.target.onerror = null; e.target.src = 'https://i.imgur.com/FnYqHyv.png'; }} className={`absolute max-w-full max-h-full object-contain transition-opacity duration-1000 ${idx === currentLogoIdx ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`} />
                                         ))
                                     ) : <div className="text-5xl md:text-7xl font-tv-header tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white via-gray-200 to-gray-600 opacity-30">AGENCIA NOVABIT</div>}
                                 </div>
@@ -919,10 +965,31 @@
                             </div>
                         </div>
 
+                        {/* 5. ANIMACIÓN ESPECTACULAR DE GANADORES */}
+                        <div className={`w-full h-full transition-all duration-1000 absolute flex flex-col items-center justify-center overflow-hidden ${gameState.activeView === 'winner' ? 'opacity-100 z-50' : 'opacity-0 pointer-events-none z-0'}`}>
+                            <div className="absolute inset-0 bg-black/80 backdrop-blur-md"></div>
+                            {gameState.activeView === 'winner' && <WinnerParticles />}
+                            
+                            <div className="z-10 text-center flex flex-col items-center animate-[tournamentPointPulse_2s_ease-in-out_infinite]">
+                                <i className="fa-solid fa-trophy text-[100px] text-yellow-400 mb-6 drop-shadow-[0_0_30px_rgba(250,204,21,0.8)]"></i>
+                                <h2 className="text-3xl font-tv-header tracking-[0.5em] text-yellow-500 uppercase mb-4">¡CAMPEONES!</h2>
+                                
+                                {winnerTeam ? (
+                                    <div className="bg-black/60 border-2 border-yellow-500/50 p-8 rounded-3xl shadow-[0_0_50px_rgba(250,204,21,0.4)] backdrop-blur-xl">
+                                        <h1 className="text-6xl md:text-8xl font-black tracking-tighter uppercase font-tv-header bg-clip-text text-transparent bg-gradient-to-b from-yellow-100 via-yellow-400 to-yellow-600 drop-shadow-2xl leading-tight">
+                                            {winnerTeam.p1} <br/> & {winnerTeam.p2}
+                                        </h1>
+                                    </div>
+                                ) : (
+                                    <h1 className="text-6xl font-black text-white font-tv-header">PARTIDO FINALIZADO</h1>
+                                )}
+                            </div>
+                        </div>
+
                     </div>
 
                     {/* BANNER INFERIOR DINÁMICO */}
-                    <div className={`fixed bottom-0 left-0 w-full bg-gradient-to-r from-black/90 via-black/80 to-black/90 backdrop-blur-xl border-t border-white/10 h-14 flex items-center px-8 transition-transform duration-500 z-30 ${gameState.activeView === 'sponsor_full' ? 'translate-y-full' : 'translate-y-0'}`}>
+                    <div className={`fixed bottom-0 left-0 w-full bg-gradient-to-r from-black/90 via-black/80 to-black/90 backdrop-blur-xl border-t border-white/10 h-14 flex items-center px-8 transition-transform duration-500 z-40 ${gameState.activeView === 'sponsor_full' || gameState.activeView === 'winner' ? 'translate-y-full' : 'translate-y-0'}`}>
                         <div className="flex-1 overflow-hidden relative h-full">
                             {gameState.sponsors?.length > 0 && (
                                 <div key={currentSponsorIdx} className="absolute inset-0 flex items-center text-sm md:text-base font-bold tracking-[0.2em] uppercase animate-[slideInRight_0.5s_ease-out_forwards] font-tv-header">
@@ -1061,7 +1128,8 @@
 
                             <div className="bg-blue-900/20 border border-blue-500/30 p-4 rounded text-xs text-blue-200">
                                 <i className="fa-solid fa-circle-info text-lg mb-2"></i><br/>
-                                <b>Importación Mágica desde Google Drive:</b> Selecciona todas las imágenes en tu carpeta de Google Drive, haz clic en "Obtener enlaces" y pégalos directamente en las cajas de texto de abajo (uno por línea). El sistema los convertirá automáticamente para que se vean en el marcador.
+                                <b>Importación Mágica desde Google Drive:</b> Selecciona todas las imágenes en tu carpeta de Google Drive, haz clic en "Obtener enlaces" y pégalos directamente en las cajas de texto de abajo (uno por línea). El sistema los convertirá automáticamente.<br/><br/>
+                                <span className="text-pink-300"><b>NOTA IMPORTANTE:</b> Si Google Drive bloquea las imágenes o no se muestran, recomendamos subir tus banners a <b>postimages.org</b> o <b>imgur.com</b> y pegar aquí el 'Enlace directo' (.jpg o .png).</span>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
