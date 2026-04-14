@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>NovaScore - Padel Scoreboard Pro</title>
     
     <link rel="icon" href="https://i.imgur.com/FnYqHyv.png">
@@ -72,25 +72,11 @@
             border-radius: 50%;
             animation: floatUp linear infinite;
         }
-        
-        /* Borde animado login premium */
-        @keyframes borderGlow {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-        }
-        .animated-border-box {
-            position: relative;
-        }
-        .animated-border-box::before {
-            content: ''; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px;
-            background: linear-gradient(45deg, #db2777, #4f46e5, #06b6d4, #db2777);
-            background-size: 300% 300%; z-index: -1; border-radius: 2.6rem; animation: borderGlow 6s ease infinite; opacity: 0.5;
-        }
 
         input[type="password"]::-ms-reveal,
         input[type="password"]::-ms-clear { display: none; }
-        body { margin: 0; overflow: hidden; background-color: #0a0a0c; }
+        
+        body { margin: 0; overflow: hidden; background-color: #0a0a0c; touch-action: manipulation; }
     </style>
 </head>
 <body>
@@ -105,7 +91,7 @@
 
         // --- CONFIGURACIÓN DE FIREBASE ---
         let firebaseConfig = {
-            apiKey: "AIzaSyC3zt607wskM2ax9fxVQM7qRrsMxvepjss",
+             apiKey: "AIzaSyC3zt607wskM2ax9fxVQM7qRrsMxvepjss",
   authDomain: "novascore-24ab5.firebaseapp.com",
   projectId: "novascore-24ab5",
   storageBucket: "novascore-24ab5.firebasestorage.app",
@@ -146,6 +132,8 @@
             server: 1, currentSet: 0, isTieBreak: false, tvAlert: '',
             timeLeft: 300, isTimerRunning: false, matchClock: 0, isMatchClockRunning: false,
             sponsors: ["TORNEO PATROCINADO POR: RED BULL", "VISITA NUESTRO BAR PARA BEBIDAS FRÍAS"],
+            tournamentBanners: [], 
+            tournamentSponsors: [], 
             matchHistory: []
         };
 
@@ -155,7 +143,7 @@
                 <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
                     <div className={`absolute top-[-20%] left-[-10%] w-[60vw] h-[60vw] rounded-full mix-blend-screen filter blur-[120px] opacity-40 animate-pulse transition-colors duration-1000 ${activeView === 'halftime' ? 'bg-indigo-900' : theme.bg1}`}></div>
                     <div className={`absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full mix-blend-screen filter blur-[100px] opacity-40 transition-colors duration-1000 ${activeView === 'halftime' ? 'bg-cyan-900' : theme.bg2}`}></div>
-                    <div className="absolute top-[40%] left-[40%] w-[30vw] h-[30vw] bg-purple-600 rounded-full mix-blend-screen filter blur-[150px] opacity-10"></div>
+                    <div className="absolute top-[40%] left-[40%] w-[30vw] h-[30vw] bg-zinc-600 rounded-full mix-blend-screen filter blur-[150px] opacity-10"></div>
                     <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '30px 30px' }}></div>
                 </div>
             );
@@ -232,7 +220,6 @@
             return '';
         };
 
-        // Algoritmo para chequear si el partido ya se ganó
         const checkMatchEnd = (state) => {
             let w1 = 0, w2 = 0;
             for(let i=0; i<3; i++) {
@@ -256,7 +243,6 @@
             const gameStateRef = useRef(gameState);
             
             const [globalSponsors, setGlobalSponsors] = useState([]);
-            // Arrays separados para evitar colisiones
             const [tournamentBanners, setTournamentBanners] = useState([]);
             const [tournamentSponsors, setTournamentSponsors] = useState([]);
 
@@ -345,16 +331,15 @@
 
             const handleLogout = () => {
                 setAuthMode('login');
-                setPinInput(''); 
+                setPinInput(''); // Borra el PIN visualmente
                 setActivePin(null);
                 setActiveSpectatorId(null);
                 setIsPublicMode(false);
                 setShowControls(false);
-                const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-                window.history.replaceState({path:newUrl},'',newUrl);
+                // Limpia la URL recargando la ruta base para asegurar un reseteo total
+                window.location.href = window.location.pathname;
             };
 
-            // Escucha de Firestore: Actualiza estado y arrays separados de publicidad
             useEffect(() => {
                 if (!user || authMode !== 'scoreboard' || !activeSpectatorId) return;
                 const unsub = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', activeSpectatorId), (docSnap) => {
@@ -368,7 +353,6 @@
                 return () => unsub();
             }, [user, authMode, activeSpectatorId]);
 
-            // Motor de relojes
             useEffect(() => {
                 let intervalId = null;
                 if (authMode === 'scoreboard' && !isPublicMode && activePin && (gameState.isTimerRunning || gameState.isMatchClockRunning)) {
@@ -399,7 +383,6 @@
                 }
             }, [gameState.activeView, allFullSponsors.length]);
 
-            // pushUpdate solo escribe gameState, para no machacar los arrays de publicidad
             const pushUpdate = async (updates) => {
                 if (!activePin || isPublicMode) return;
                 const currentState = gameStateRef.current;
@@ -589,36 +572,50 @@
                 return (
                     <div className="h-screen overflow-y-auto custom-scrollbar flex items-center justify-center relative bg-[#050505]">
                         <BackgroundFX activeView="scoreboard" themeKey="pink" />
-                        <div className="absolute inset-0 bg-black/60 z-0"></div>
-                        <div className="z-10 bg-white/5 backdrop-blur-3xl p-12 rounded-[2.5rem] border border-white/10 shadow-[0_0_100px_rgba(219,39,119,0.15)] w-full max-w-lg text-center flex flex-col items-center animated-border-box">
-                            <div className="w-24 h-24 bg-gradient-to-br from-pink-500 to-indigo-600 rounded-full flex items-center justify-center mb-8 shadow-[0_0_40px_rgba(219,39,119,0.5)] border-[3px] border-white/20">
-                                <i className="fa-solid fa-lock text-white text-[36px]"></i>
+                        
+                        {/* Overlay Oscuro Metálico */}
+                        <div className="absolute inset-0 bg-black/80 z-0"></div>
+
+                        {/* Caja de Login Premium y Minimalista */}
+                        <div className="z-10 bg-black/40 backdrop-blur-2xl p-10 sm:p-12 rounded-3xl border border-white/10 shadow-2xl w-full max-w-md text-center flex flex-col items-center mx-4">
+                            
+                            <div className="w-20 h-20 bg-zinc-900 rounded-full flex items-center justify-center mb-8 shadow-inner border border-white/5">
+                                <i className="fa-solid fa-lock text-white/80 text-[32px]"></i>
                             </div>
-                            <h1 className="text-4xl font-tv-header tracking-widest uppercase mb-3 text-white">NovaBit Pro</h1>
-                            <p className="text-gray-400 text-xs tracking-[0.4em] font-tv-numbers mb-10">SISTEMA DE RETRANSMISIÓN</p>
-                            <form onSubmit={handleLoginSubmit} className="space-y-8 w-full">
+                            
+                            <h1 className="text-3xl font-tv-header tracking-[0.2em] uppercase mb-2 text-white">NovaBit Pro</h1>
+                            <p className="text-zinc-500 text-xs tracking-[0.3em] font-tv-numbers mb-8">SISTEMA DE RETRANSMISIÓN</p>
+                            
+                            <form onSubmit={handleLoginSubmit} className="space-y-6 w-full">
                                 <div>
                                     <div className="relative group">
                                         <input 
-                                            type="password" value={pinInput} onChange={e => setPinInput(e.target.value)} placeholder="------" autoComplete="new-password" maxLength="6"
-                                            className="w-full bg-black/40 border-b-2 border-white/20 hover:border-white/50 text-white font-bold text-center text-4xl py-4 focus:outline-none focus:border-pink-500 transition-all font-tv-numbers tracking-[0.8em] rounded-t-xl" 
+                                            type="password" 
+                                            value={pinInput} 
+                                            onChange={e => setPinInput(e.target.value)} 
+                                            placeholder="••••••••" 
+                                            autoComplete="new-password"
+                                            maxLength="10"
+                                            className="w-full bg-black/50 border-b-2 border-white/10 hover:border-white/30 text-white font-bold text-center text-3xl py-4 focus:outline-none focus:border-white transition-all font-tv-numbers tracking-[0.5em] rounded-t-lg" 
                                             autoFocus
                                         />
-                                        <div className="absolute inset-0 border border-white/5 rounded-xl pointer-events-none group-hover:border-white/10 transition-colors"></div>
                                     </div>
                                     {authError && <p className="text-red-500 text-xs font-bold mt-4 animate-pulse tracking-widest uppercase">{authError}</p>}
                                 </div>
-                                <button type="submit" className="w-full bg-gradient-to-r from-pink-600 hover:from-pink-500 to-indigo-600 hover:to-indigo-500 text-white font-black py-5 rounded-xl uppercase tracking-widest transition-all shadow-[0_10px_30px_rgba(219,39,119,0.3)] hover:shadow-[0_10px_40px_rgba(219,39,119,0.5)] hover:-translate-y-1 font-tv-header text-xl">
-                                    Desbloquear Sistema
+                                
+                                <button type="submit" className="w-full bg-white text-black hover:bg-gray-200 font-black py-4 rounded-lg uppercase tracking-[0.2em] transition-all hover:-translate-y-0.5 font-tv-header text-lg shadow-[0_0_20px_rgba(255,255,255,0.1)]">
+                                    Acceder
                                 </button>
                             </form>
-                            <div className="mt-10 pt-8 border-t border-white/10 w-full">
-                                <p className="text-xs text-gray-500 italic mb-4">¿Eres espectador del torneo? Solicita el enlace seguro oficial al organizador del evento.</p>
+
+                            <div className="mt-8 pt-6 border-t border-white/5 w-full">
+                                <p className="text-[10px] text-zinc-500 italic uppercase tracking-wider">Acceso exclusivo para personal autorizado.</p>
                             </div>
                         </div>
-                        <div className="absolute bottom-8 flex flex-col items-center opacity-50 text-white z-10">
-                            <img src="https://i.imgur.com/FnYqHyv.png" className="h-10 mb-2 object-contain" />
-                            <span className="text-[10px] font-bold tracking-[0.3em] uppercase">NovaBit Media Agency</span>
+                        
+                        <div className="absolute bottom-8 flex flex-col items-center opacity-40 text-white z-10">
+                            <img src="https://i.imgur.com/FnYqHyv.png" className="h-8 mb-2 object-contain grayscale opacity-70" />
+                            <span className="text-[9px] font-bold tracking-[0.3em] uppercase">NovaBit Media Agency</span>
                         </div>
                     </div>
                 );
@@ -634,30 +631,31 @@
                 <div className="min-h-screen text-white relative flex flex-col overflow-hidden">
                     <BackgroundFX activeView={gameState.activeView} themeKey={gameState.theme} />
 
+                    {/* EL BOTÓN DE AJUSTES NUNCA DEBE APARECER EN MODO PÚBLICO */}
                     {!isPublicMode && (
                         <button onClick={() => setShowControls(true)} className={`fixed bottom-6 right-6 z-50 ${activeTheme.bg1} backdrop-blur-md p-4 rounded-full border border-white/20 shadow-xl hover:scale-110 transition-transform`}>
                             <i className="fa-solid fa-gear text-[28px]"></i>
                         </button>
                     )}
 
-                    {/* MENÚ OPERADOR LATERAL */}
+                    {/* MENÚ OPERADOR LATERAL (Totalmente Responsivo en Móviles) */}
                     {!isPublicMode && (
-                        <div className={`fixed right-0 top-0 h-full w-[450px] bg-gray-900/95 backdrop-blur-xl border-l border-white/10 z-50 transform transition-transform duration-500 ease-in-out ${showControls ? 'translate-x-0' : 'translate-x-full'} shadow-2xl flex flex-col`} onContextMenu={(e) => e.stopPropagation()}>
+                        <div className={`fixed right-0 top-0 h-full w-full sm:w-[450px] bg-gray-900/95 backdrop-blur-xl border-l border-white/10 z-50 transform transition-transform duration-500 ease-in-out ${showControls ? 'translate-x-0' : 'translate-x-full'} shadow-2xl flex flex-col`} onContextMenu={(e) => e.stopPropagation()}>
                             <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/80">
                                 <h2 className={`text-xl font-tv-header tracking-widest ${activeTheme.text} flex items-center gap-2`}><i className="fa-solid fa-gamepad"></i> OPERADOR</h2>
                                 <div className="flex gap-3 items-center">
-                                    <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-1 rounded border border-green-500/30 font-tv-numbers font-bold">PIN: {activePin}</span>
+                                    <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-1 rounded border border-green-500/30 font-tv-numbers font-bold hidden sm:block">PIN: {activePin}</span>
                                     <button onClick={handleLogout} className="text-red-400 hover:text-red-300 text-xs font-bold transition-colors" title="Cerrar Sesión"><i className="fa-solid fa-power-off text-[18px]"></i></button>
                                     <button onClick={() => setShowControls(false)} className="text-gray-400 hover:text-white ml-2"><i className="fa-solid fa-xmark text-[24px]"></i></button>
                                 </div>
                             </div>
 
-                            <div className="flex-1 overflow-y-auto p-5 space-y-6 text-sm custom-scrollbar">
+                            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-6 text-sm custom-scrollbar pb-20">
                                 <div className="grid grid-cols-2 gap-2">
-                                    <button onClick={() => window.open(`${window.location.pathname}?view=${activeSpectatorId}`, 'PantallaTV', 'width=1280,height=720')} className="py-2 bg-indigo-600 hover:bg-indigo-500 rounded font-bold flex items-center justify-center gap-2 transition-colors shadow-lg text-[11px] uppercase">
+                                    <button onClick={() => window.open(`${window.location.pathname}?view=${activeSpectatorId}`, 'PantallaTV', 'width=1280,height=720')} className="py-3 bg-indigo-600 hover:bg-indigo-500 rounded font-bold flex items-center justify-center gap-2 transition-colors shadow-lg text-[11px] uppercase">
                                         <i className="fa-solid fa-tv"></i> PANTALLA TV
                                     </button>
-                                    <button onClick={copyPublicLink} className="py-2 bg-emerald-600 hover:bg-emerald-500 rounded font-bold flex items-center justify-center gap-2 transition-colors shadow-lg text-[11px] uppercase">
+                                    <button onClick={copyPublicLink} className="py-3 bg-emerald-600 hover:bg-emerald-500 rounded font-bold flex items-center justify-center gap-2 transition-colors shadow-lg text-[11px] uppercase">
                                         <i className="fa-solid fa-link"></i> LINK PÚBLICO
                                     </button>
                                 </div>
@@ -681,32 +679,34 @@
                                     </div>
                                 </div>
 
+                                {/* Control de Vistas */}
                                 <div className="space-y-2">
                                     <label className="text-gray-400 font-bold tracking-wider text-xs uppercase">CONTROL DE PANTALLA TV</label>
                                     <div className="grid grid-cols-3 gap-1.5 mb-1.5">
                                         {[{ id: 'scoreboard', icon: 'fa-desktop', label: 'SCORE' }, { id: 'warmup', icon: 'fa-fire', label: 'CALENT.' }, { id: 'halftime', icon: 'fa-mug-hot', label: 'DESC.' }].map(v => (
-                                            <button key={v.id} onClick={() => pushUpdate({activeView: v.id})} className={`py-2 rounded border font-bold flex flex-col items-center gap-1 transition-all text-[9px] ${gameState.activeView === v.id ? 'bg-white text-black border-white' : 'border-white/10 text-gray-400 hover:bg-white/5'}`}>
-                                                <i className={`fa-solid ${v.icon} text-[12px]`}></i> {v.label}
+                                            <button key={v.id} onClick={() => pushUpdate({activeView: v.id})} className={`py-3 sm:py-2 rounded border font-bold flex flex-col items-center gap-1 transition-all text-[9px] ${gameState.activeView === v.id ? 'bg-white text-black border-white' : 'border-white/10 text-gray-400 hover:bg-white/5'}`}>
+                                                <i className={`fa-solid ${v.icon} text-[14px] sm:text-[12px]`}></i> {v.label}
                                             </button>
                                         ))}
                                     </div>
                                     <div className="grid grid-cols-3 gap-1.5">
-                                        {[{ id: 'sponsor_full', icon: 'fa-bolt', label: 'SPONSORS' }, { id: 'history', icon: 'fa-list-ul', label: 'HISTORIAL' }, { id: 'winner', icon: 'fa-trophy', label: 'GANADORES' }].map(v => (
-                                            <button key={v.id} onClick={() => pushUpdate({activeView: v.id})} className={`py-2 rounded border font-bold flex flex-col items-center gap-1 transition-all text-[9px] ${gameState.activeView === v.id ? 'bg-yellow-500 text-black border-yellow-500' : 'border-white/10 text-gray-400 hover:bg-white/5'}`}>
-                                                <i className={`fa-solid ${v.icon} text-[12px]`}></i> {v.label}
+                                        {[{ id: 'sponsor_full', icon: 'fa-bolt', label: 'SPONSORS' }, { id: 'history', icon: 'fa-list-ul', label: 'HISTORIAL' }, { id: 'winner', icon: 'fa-trophy', label: 'GANADOR' }].map(v => (
+                                            <button key={v.id} onClick={() => pushUpdate({activeView: v.id})} className={`py-3 sm:py-2 rounded border font-bold flex flex-col items-center gap-1 transition-all text-[9px] ${gameState.activeView === v.id ? 'bg-yellow-500 text-black border-yellow-500' : 'border-white/10 text-gray-400 hover:bg-white/5'}`}>
+                                                <i className={`fa-solid ${v.icon} text-[14px] sm:text-[12px]`}></i> {v.label}
                                             </button>
                                         ))}
                                     </div>
                                 </div>
 
+                                {/* ALERTAS Y RELOJES PANTALLA */}
                                 <div className="bg-black/40 p-3 rounded-lg border border-white/5 space-y-3">
                                     <div className="flex justify-between items-center border-b border-white/10 pb-2">
                                         <label className="text-gray-400 font-bold text-xs uppercase"><i className="fa-solid fa-triangle-exclamation"></i> ALERTAS TV</label>
-                                        <button onClick={() => pushUpdate({tvAlert: ''})} className="text-[10px] bg-red-500/20 text-red-400 px-2 py-1 rounded hover:bg-red-500/40 transition-colors">LIMPIAR</button>
+                                        <button onClick={() => pushUpdate({tvAlert: ''})} className="text-[10px] bg-red-500/20 text-red-400 px-3 py-1.5 rounded hover:bg-red-500/40 transition-colors font-bold">LIMPIAR</button>
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
                                         {['PUNTO DE ORO', 'SET POINT', 'MATCH POINT', 'TOURNAMENT POINT'].map(alert => (
-                                            <button key={alert} onClick={() => pushUpdate({tvAlert: alert})} className={`py-2 text-[10px] font-bold rounded border ${gameState.tvAlert === alert ? (alert === 'TOURNAMENT POINT' ? 'bg-amber-600 text-white border-amber-400' : 'bg-white text-black border-white') : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700'}`}>{alert}</button>
+                                            <button key={alert} onClick={() => pushUpdate({tvAlert: alert})} className={`py-3 sm:py-2 text-[10px] font-bold rounded border ${gameState.tvAlert === alert ? (alert === 'TOURNAMENT POINT' ? 'bg-amber-600 text-white border-amber-400' : 'bg-white text-black border-white') : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700'}`}>{alert}</button>
                                         ))}
                                     </div>
                                     
@@ -714,8 +714,8 @@
                                         <label className="text-gray-400 font-bold text-xs uppercase"><i className="fa-solid fa-stopwatch"></i> TIEMPO PARTIDO</label>
                                         <div className="flex items-center gap-2">
                                             <span className="font-tv-numbers font-bold text-white">{formatTime(gameState.matchClock, true)}</span>
-                                            <button onClick={() => pushUpdate({isMatchClockRunning: !gameState.isMatchClockRunning})} className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${gameState.isMatchClockRunning ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>{gameState.isMatchClockRunning ? 'PAUSAR' : 'INICIAR'}</button>
-                                            <button onClick={() => { if(window.confirm('¿Reiniciar cronómetro del partido?')) pushUpdate({matchClock: 0, isMatchClockRunning: false}) }} className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors" title="Reiniciar Cronómetro"><i className="fa-solid fa-rotate-left"></i></button>
+                                            <button onClick={() => pushUpdate({isMatchClockRunning: !gameState.isMatchClockRunning})} className={`px-3 py-1.5 rounded text-[10px] font-bold transition-colors ${gameState.isMatchClockRunning ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>{gameState.isMatchClockRunning ? 'PAUSAR' : 'INICIAR'}</button>
+                                            <button onClick={() => { if(window.confirm('¿Reiniciar cronómetro del partido?')) pushUpdate({matchClock: 0, isMatchClockRunning: false}) }} className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors" title="Reiniciar Cronómetro"><i className="fa-solid fa-rotate-left"></i></button>
                                         </div>
                                     </div>
 
@@ -724,14 +724,14 @@
                                             <span><i className="fa-solid fa-hourglass-half mr-1"></i> RELOJ PANTALLAS</span>
                                         </label>
                                         <div className="grid grid-cols-4 gap-1">
-                                            <button onClick={() => pushUpdate({timeLeft: Math.max(0, gameState.timeLeft - 60)})} className="py-1 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold transition-colors">-1 MIN</button>
-                                            <button onClick={() => pushUpdate({timeLeft: gameState.timeLeft + 60})} className="py-1 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold transition-colors">+1 MIN</button>
-                                            <button onClick={() => pushUpdate({timeLeft: 300, isTimerRunning: false})} className="py-1 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold transition-colors border border-white/10">5 MIN</button>
-                                            <button onClick={() => pushUpdate({timeLeft: 600, isTimerRunning: false})} className="py-1 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold transition-colors border border-white/10">10 MIN</button>
+                                            <button onClick={() => pushUpdate({timeLeft: Math.max(0, gameState.timeLeft - 60)})} className="py-2 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold transition-colors">-1 MIN</button>
+                                            <button onClick={() => pushUpdate({timeLeft: gameState.timeLeft + 60})} className="py-2 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold transition-colors">+1 MIN</button>
+                                            <button onClick={() => pushUpdate({timeLeft: 300, isTimerRunning: false})} className="py-2 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold transition-colors border border-white/10">5 MIN</button>
+                                            <button onClick={() => pushUpdate({timeLeft: 600, isTimerRunning: false})} className="py-2 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold transition-colors border border-white/10">10 MIN</button>
                                         </div>
-                                        <div className="flex items-center justify-between bg-black/50 p-2 rounded">
-                                            <span className="font-tv-numbers font-bold text-xl text-white ml-2">{formatTime(gameState.timeLeft)}</span>
-                                            <button onClick={() => pushUpdate({isTimerRunning: !gameState.isTimerRunning})} className={`px-4 py-1.5 rounded text-xs font-bold transition-colors ${gameState.isTimerRunning ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>
+                                        <div className="flex items-center justify-between bg-black/50 p-2 rounded mt-2">
+                                            <span className="font-tv-numbers font-bold text-2xl text-white ml-2">{formatTime(gameState.timeLeft)}</span>
+                                            <button onClick={() => pushUpdate({isTimerRunning: !gameState.isTimerRunning})} className={`px-5 py-2 rounded text-xs font-bold transition-colors ${gameState.isTimerRunning ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>
                                                 {gameState.isTimerRunning ? 'PAUSAR' : 'INICIAR'}
                                             </button>
                                         </div>
@@ -743,7 +743,7 @@
                                         <div className="flex justify-between items-center">
                                             <label className="text-gray-400 font-bold text-xs uppercase">PUNTOS Y SETS</label>
                                             <div className="flex gap-2">
-                                                <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-1 rounded border border-green-500/30 flex items-center gap-1"><i className="fa-solid fa-robot"></i> AUTO-ALERTS ON</span>
+                                                <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-1 rounded border border-green-500/30 flex items-center gap-1 hidden sm:flex"><i className="fa-solid fa-robot"></i> AUTO-ALERTS</span>
                                                 <button onClick={() => pushUpdate({isTieBreak: !gameState.isTieBreak})} className={`text-xs px-3 py-1 rounded font-bold border transition-all ${gameState.isTieBreak ? 'bg-red-600 border-red-500 text-white animate-pulse' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>MODO TIE-BREAK</button>
                                             </div>
                                         </div>
@@ -754,39 +754,39 @@
                                         const team = gameState[teamKey];
                                         return (
                                             <div key={`ctrl-t${num}`} className="bg-black/40 p-3 rounded-lg border border-white/5 space-y-3 relative overflow-hidden">
-                                                {gameState.server === num && <div className="absolute top-0 left-0 w-1 h-full bg-yellow-400"></div>}
-                                                <div className="flex items-start gap-2 pl-2">
-                                                    <div className="flex-1 space-y-1">
-                                                        <input type="text" value={team.p1} onChange={e => pushUpdate({ [teamKey]: { ...team, p1: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full px-2 py-1 text-xs uppercase rounded font-tv-numbers"/>
-                                                        <input type="text" value={team.p2} onChange={e => pushUpdate({ [teamKey]: { ...team, p2: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full px-2 py-1 text-xs uppercase rounded font-tv-numbers"/>
+                                                {gameState.server === num && <div className="absolute top-0 left-0 w-1.5 h-full bg-yellow-400"></div>}
+                                                <div className="flex items-start gap-2 pl-3">
+                                                    <div className="flex-1 space-y-2">
+                                                        <input type="text" value={team.p1} onChange={e => pushUpdate({ [teamKey]: { ...team, p1: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full px-3 py-2 text-xs uppercase rounded font-tv-numbers"/>
+                                                        <input type="text" value={team.p2} onChange={e => pushUpdate({ [teamKey]: { ...team, p2: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full px-3 py-2 text-xs uppercase rounded font-tv-numbers"/>
                                                     </div>
-                                                    <button onClick={() => pushUpdate({server: num})} className={`text-[10px] px-2 py-2 rounded font-bold shrink-0 h-full ${gameState.server === num ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-400'}`}>SAQUE</button>
+                                                    <button onClick={() => pushUpdate({server: num})} className={`text-[10px] px-3 py-2 rounded font-bold shrink-0 h-full min-h-[72px] ${gameState.server === num ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-400'}`}><i className="fa-solid fa-baseball mb-1 block text-lg"></i>SAQUE</button>
                                                 </div>
-                                                <div className="grid grid-cols-2 gap-3 pl-2">
+                                                <div className="grid grid-cols-2 gap-3 pl-3">
                                                     <div className="bg-white/5 p-2 rounded text-center">
                                                         <div className="flex justify-between items-center mb-1 px-1">
                                                             <span className={`text-xs font-bold ${gameState.isTieBreak ? 'text-red-400' : 'text-gray-400'}`}>Pts ({gameState.isTieBreak ? team.tbPoints : team.points})</span>
-                                                            <button onClick={() => resetPoints(num)} className="text-gray-500 hover:text-white transition-colors" title="Reiniciar Puntos"><i className="fa-solid fa-rotate-left text-[10px]"></i></button>
+                                                            <button onClick={() => resetPoints(num)} className="text-gray-500 hover:text-white transition-colors py-1 px-2" title="Reiniciar Puntos"><i className="fa-solid fa-rotate-left text-[12px]"></i></button>
                                                         </div>
                                                         <div className="flex gap-1">
-                                                            <button onClick={() => handlePoints(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-minus text-[12px]"></i></button>
-                                                            <button onClick={() => handlePoints(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-plus text-[12px]"></i></button>
+                                                            <button onClick={() => handlePoints(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 py-2.5 rounded"><i className="fa-solid fa-minus text-[14px]"></i></button>
+                                                            <button onClick={() => handlePoints(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 py-2.5 rounded"><i className="fa-solid fa-plus text-[14px]"></i></button>
                                                         </div>
                                                     </div>
                                                     <div className="bg-white/5 p-2 rounded text-center">
                                                         <div className="flex justify-between items-center mb-1 px-1">
                                                             <span className="text-gray-400 text-xs font-bold">Games ({team.sets[gameState.currentSet]})</span>
-                                                            <button onClick={() => resetGames(num)} className="text-gray-500 hover:text-white transition-colors" title="Reiniciar Games"><i className="fa-solid fa-rotate-left text-[10px]"></i></button>
+                                                            <button onClick={() => resetGames(num)} className="text-gray-500 hover:text-white transition-colors py-1 px-2" title="Reiniciar Games"><i className="fa-solid fa-rotate-left text-[12px]"></i></button>
                                                         </div>
                                                         <div className="flex gap-1">
-                                                            <button onClick={() => updateGames(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-minus text-[12px]"></i></button>
-                                                            <button onClick={() => updateGames(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 py-1.5 rounded"><i className="fa-solid fa-plus text-[12px]"></i></button>
+                                                            <button onClick={() => updateGames(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 py-2.5 rounded"><i className="fa-solid fa-minus text-[14px]"></i></button>
+                                                            <button onClick={() => updateGames(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 py-2.5 rounded"><i className="fa-solid fa-plus text-[14px]"></i></button>
                                                         </div>
                                                     </div>
                                                 </div>
                                                 {gameState.isTieBreak && (
-                                                    <div className="pl-2">
-                                                        <button onClick={() => winTieBreak(num)} className="w-full mt-2 bg-red-600/80 hover:bg-red-500 text-white text-[10px] font-bold py-1.5 rounded transition-colors uppercase border border-red-500">
+                                                    <div className="pl-3">
+                                                        <button onClick={() => winTieBreak(num)} className="w-full mt-2 bg-red-600/80 hover:bg-red-500 text-white text-[12px] font-bold py-3 rounded transition-colors uppercase border border-red-500">
                                                             <i className="fa-solid fa-trophy mr-1"></i> Ganó Tie-Break
                                                         </button>
                                                     </div>
@@ -794,8 +794,8 @@
                                             </div>
                                         )
                                     })}
-                                    <div className="flex gap-1">
-                                        {[0, 1, 2].map(s => <button key={s} onClick={() => pushUpdate({currentSet: s})} className={`flex-1 py-1.5 text-xs font-bold rounded ${gameState.currentSet === s ? 'bg-white text-black' : 'bg-gray-800 text-gray-400'}`}>SET {s + 1}</button>)}
+                                    <div className="flex gap-2">
+                                        {[0, 1, 2].map(s => <button key={s} onClick={() => pushUpdate({currentSet: s})} className={`flex-1 py-3 text-xs font-bold rounded ${gameState.currentSet === s ? 'bg-white text-black shadow-md' : 'bg-gray-800 text-gray-400'}`}>SET {s + 1}</button>)}
                                     </div>
                                 </div>
 
@@ -804,15 +804,15 @@
                                         <label className="text-gray-400 font-bold text-xs uppercase"><i className="fa-solid fa-bullhorn"></i> MENSAJES BARRA INFERIOR</label>
                                     </div>
                                     <div className="flex gap-2">
-                                        <input type="text" value={newTickerMsg} onChange={e => setNewTickerMsg(e.target.value)} placeholder="Ej: Cantina abierta..." className="flex-1 bg-black/50 border border-white/20 text-white text-xs rounded px-2 py-1.5 focus:outline-none focus:border-white" />
-                                        <button onClick={addTickerMessage} className="bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 rounded font-bold text-[10px] transition-colors">AÑADIR</button>
+                                        <input type="text" value={newTickerMsg} onChange={e => setNewTickerMsg(e.target.value)} placeholder="Ej: Cantina abierta..." className="flex-1 bg-black/50 border border-white/20 text-white text-xs rounded px-2 py-2 focus:outline-none focus:border-white" />
+                                        <button onClick={addTickerMessage} className="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded font-bold text-[10px] transition-colors">AÑADIR</button>
                                     </div>
                                     <div className="space-y-1 max-h-32 overflow-y-auto custom-scrollbar pr-1">
                                         {(gameState.sponsors || []).length === 0 && <p className="text-[10px] text-gray-500 italic">No hay mensajes configurados.</p>}
                                         {(gameState.sponsors || []).map((msg, idx) => (
-                                            <div key={idx} className="flex items-center justify-between bg-black/40 px-2 py-1.5 rounded text-[10px] border border-white/5">
+                                            <div key={idx} className="flex items-center justify-between bg-black/40 px-2 py-2 rounded text-[10px] border border-white/5">
                                                 <span className="truncate text-gray-300 flex-1 mr-2">{msg}</span>
-                                                <button onClick={() => removeTickerMessage(idx)} className="text-red-400 hover:text-red-300 px-2 py-1"><i className="fa-solid fa-trash"></i></button>
+                                                <button onClick={() => removeTickerMessage(idx)} className="text-red-400 hover:text-red-300 px-3 py-1"><i className="fa-solid fa-trash"></i></button>
                                             </div>
                                         ))}
                                     </div>
@@ -820,21 +820,21 @@
 
                                 {/* GUARDAR PARTIDO E HISTORIAL */}
                                 <div className="space-y-2 border-t border-white/10 pt-4">
-                                    <button onClick={saveMatchAndReset} className="w-full py-4 bg-red-600 hover:bg-red-500 rounded-lg font-black text-white tracking-widest shadow-lg shadow-red-500/20 border border-red-400/50 uppercase transition-all hover:scale-[1.02] font-tv-header text-lg">
+                                    <button onClick={saveMatchAndReset} className="w-full py-5 bg-red-600 hover:bg-red-500 rounded-lg font-black text-white tracking-widest shadow-lg shadow-red-500/20 border border-red-400/50 uppercase transition-all hover:scale-[1.02] font-tv-header text-xl">
                                         <i className="fa-solid fa-floppy-disk mr-2"></i> Finalizar y Guardar
                                     </button>
                                     
                                     {gameState.matchHistory && gameState.matchHistory.length > 0 && (
-                                        <div className="bg-black/40 p-3 rounded-lg border border-white/5 mt-4">
-                                            <label className="text-gray-400 font-bold text-[10px] uppercase mb-2 block"><i className="fa-solid fa-list-ul"></i> HISTORIAL GUARDADO</label>
-                                            <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
+                                        <div className="bg-black/40 p-4 rounded-lg border border-white/5 mt-4">
+                                            <label className="text-gray-400 font-bold text-[11px] uppercase mb-3 block"><i className="fa-solid fa-list-ul"></i> HISTORIAL GUARDADO</label>
+                                            <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
                                                 {gameState.matchHistory.map(m => (
-                                                    <div key={m.id} className="flex justify-between items-center bg-white/5 p-2 rounded border border-white/5">
+                                                    <div key={m.id} className="flex justify-between items-center bg-white/5 p-3 rounded border border-white/5">
                                                         <div className="flex flex-col">
-                                                            <span className="text-[9px] text-gray-400 font-bold">{m.category} - {m.level}</span>
+                                                            <span className="text-[10px] text-gray-400 font-bold mb-1">{m.category} - {m.level}</span>
                                                             <span className="text-xs font-bold text-white"><span className="text-pink-400">{m.team1.p1}</span> vs <span className="text-cyan-400">{m.team2.p1}</span></span>
                                                         </div>
-                                                        <button onClick={() => deleteMatchHistory(m.id)} className="text-red-500 hover:text-red-300 p-2"><i className="fa-solid fa-trash"></i></button>
+                                                        <button onClick={() => deleteMatchHistory(m.id)} className="text-red-500 hover:text-red-300 p-3"><i className="fa-solid fa-trash"></i></button>
                                                     </div>
                                                 ))}
                                             </div>
@@ -852,6 +852,7 @@
                         {/* 1. SCOREBOARD */}
                         <div className={`w-full max-w-6xl transition-all duration-700 absolute flex flex-col justify-center ${gameState.activeView === 'scoreboard' ? 'opacity-100 scale-100 z-10' : 'opacity-0 scale-95 pointer-events-none z-0'}`}>
                             
+                            {/* HEADER */}
                             <div className="mb-6 flex justify-between items-end border-b border-white/20 pb-4 relative">
                                 <div className="flex items-center gap-6">
                                     {gameState.tournamentLogo ? (
@@ -879,6 +880,7 @@
                                 </div>
                             </div>
 
+                            {/* ALERTAS TV AUTOMÁTICAS */}
                             <div className={`w-full overflow-hidden transition-all duration-500 ease-out flex justify-center ${gameState.tvAlert ? 'max-h-24 mb-4 opacity-100' : 'max-h-0 opacity-0 mb-0'}`}>
                                 {gameState.tvAlert && (() => {
                                     const a = gameState.tvAlert;
@@ -891,7 +893,9 @@
                                 })()}
                             </div>
 
+                            {/* TABLA PRINCIPAL PREMIUM */}
                             <div className="relative border border-white/10 bg-black/50 backdrop-blur-2xl rounded-xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+                                {/* EFECTO REFLEJO CRISTAL */}
                                 <div className="animate-sheen"></div>
 
                                 <div className="grid grid-cols-[1fr_auto_auto_auto_130px] gap-1 border-b border-white/10 bg-black/60 text-gray-400 text-xs font-bold tracking-[0.2em] p-2 pr-4 text-center items-center z-20 relative font-tv-header">
@@ -912,6 +916,7 @@
                                                 <div className="flex flex-col border-l-2 border-white/20 pl-4 py-1">
                                                     <span className="text-2xl md:text-3xl font-tv-header tracking-widest uppercase text-white/90 leading-tight">{team.p1}</span>
                                                     <span className="text-2xl md:text-3xl font-tv-header tracking-widest uppercase text-white/90 leading-tight">{team.p2}</span>
+                                                    {/* INDICADORES DE SETS GANADOS */}
                                                     <div className="flex gap-1 mt-1.5">
                                                         {[...Array(2)].map((_, i) => (
                                                             <div key={i} className={`w-2.5 h-2.5 rounded-sm ${i < setsWon ? activeTheme.bg1 + ' shadow-[0_0_5px_currentColor]' : 'bg-white/10'}`}></div>
@@ -925,6 +930,7 @@
                                                 </div>
                                             ))}
                                             
+                                            {/* CAJA DE PUNTOS (CON EFECTO PUNTO DE ORO) */}
                                             <div className={`flex items-center justify-center text-6xl font-tv-numbers font-black tracking-tighter m-1 rounded-sm border-2 transition-all duration-300 ${
                                                 gameState.isTieBreak ? 'bg-red-600 border-red-400 text-white shadow-[0_0_20px_rgba(220,38,38,0.3)]' : 
                                                 (isPuntoDeOro ? 'bg-yellow-500 border-yellow-300 text-black shadow-[0_0_25px_rgba(250,204,21,0.6)]' : 'bg-white border-transparent text-black')
@@ -940,7 +946,7 @@
                         {/* BANNERS SCOREBOARD FLOTANTES (Fijos en la pantalla para no ser cortados) */}
                         {tournamentBanners && tournamentBanners.length > 0 && (
                             <div className={`fixed bottom-24 right-10 z-[100] transition-all duration-700 ${gameState.activeView === 'scoreboard' ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10 pointer-events-none'}`}>
-                                <BannerCarousel banners={tournamentBanners} className="w-[350px] h-[100px] bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)]" />
+                                <BannerCarousel banners={tournamentBanners} className="w-[350px] h-[100px] bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)] p-2" />
                             </div>
                         )}
 
@@ -959,7 +965,7 @@
                             {/* BANNERS DESCANSO/CALENTAMIENTO */}
                             {tournamentBanners && tournamentBanners.length > 0 && (
                                 <div className="mt-12 z-20">
-                                    <BannerCarousel banners={tournamentBanners} className="w-[600px] h-[150px] bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl" />
+                                    <BannerCarousel banners={tournamentBanners} className="w-[600px] h-[150px] bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl p-4" />
                                 </div>
                             )}
                         </div>
@@ -1018,13 +1024,16 @@
                                     {gameState.tournamentPhase === 'Final' ? '¡CAMPEONES!' : '¡GANADORES DEL PARTIDO!'}
                                 </h2>
                                 
-                                {winnerTeam ? (
-                                    <div className="bg-black/60 border-2 border-yellow-500/50 p-8 rounded-3xl shadow-[0_0_50px_rgba(250,204,21,0.4)] backdrop-blur-xl min-w-[500px]">
-                                        <h1 className="text-6xl md:text-8xl font-black tracking-tighter uppercase font-tv-header bg-clip-text text-transparent bg-gradient-to-b from-yellow-100 via-yellow-400 to-yellow-600 drop-shadow-2xl leading-tight">
-                                            {winnerTeam.p1} <br/> & {winnerTeam.p2}
-                                        </h1>
-                                    </div>
-                                ) : (
+                                {checkMatchEnd(gameState) > 0 ? (() => {
+                                    const winnerTeam = checkMatchEnd(gameState) === 1 ? gameState.team1 : gameState.team2;
+                                    return (
+                                        <div className="bg-black/60 border-2 border-yellow-500/50 p-8 rounded-3xl shadow-[0_0_50px_rgba(250,204,21,0.4)] backdrop-blur-xl min-w-[500px]">
+                                            <h1 className="text-6xl md:text-8xl font-black tracking-tighter uppercase font-tv-header bg-clip-text text-transparent bg-gradient-to-b from-yellow-100 via-yellow-400 to-yellow-600 drop-shadow-2xl leading-tight">
+                                                {winnerTeam.p1} <br/> & {winnerTeam.p2}
+                                            </h1>
+                                        </div>
+                                    );
+                                })() : (
                                     <h1 className="text-6xl font-black text-white font-tv-header">PARTIDO FINALIZADO</h1>
                                 )}
                             </div>
