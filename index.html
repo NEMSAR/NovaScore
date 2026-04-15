@@ -114,7 +114,11 @@
         const THEMES = {
             pink: { name: 'MASTER (Rosa)', bg1: 'bg-pink-600', bg2: 'bg-indigo-600', text: 'text-pink-500', gradient: 'from-pink-500 to-indigo-500', border: 'border-pink-500', shadow: 'shadow-pink-500/20' },
             blue: { name: 'OPEN (Azul)', bg1: 'bg-cyan-500', bg2: 'bg-blue-700', text: 'text-cyan-400', gradient: 'from-cyan-400 to-blue-600', border: 'border-cyan-400', shadow: 'shadow-cyan-500/20' },
-            gold: { name: 'FINALS (Dorado)', bg1: 'bg-yellow-500', bg2: 'bg-orange-700', text: 'text-yellow-400', gradient: 'from-yellow-400 to-orange-500', border: 'border-yellow-400', shadow: 'shadow-yellow-500/20' }
+            gold: { name: 'FINALS (Dorado)', bg1: 'bg-yellow-500', bg2: 'bg-orange-700', text: 'text-yellow-400', gradient: 'from-yellow-400 to-orange-500', border: 'border-yellow-400', shadow: 'shadow-yellow-500/20' },
+            green: { name: 'CHALLENGER (Verde)', bg1: 'bg-emerald-500', bg2: 'bg-teal-700', text: 'text-emerald-400', gradient: 'from-emerald-400 to-teal-500', border: 'border-emerald-400', shadow: 'shadow-emerald-500/20' },
+            purple: { name: 'ELITE (Morado)', bg1: 'bg-purple-600', bg2: 'bg-fuchsia-700', text: 'text-purple-400', gradient: 'from-purple-400 to-fuchsia-500', border: 'border-purple-400', shadow: 'shadow-purple-500/20' },
+            red: { name: 'CUP (Rojo)', bg1: 'bg-red-600', bg2: 'bg-rose-700', text: 'text-red-500', gradient: 'from-red-500 to-rose-500', border: 'border-red-500', shadow: 'shadow-red-500/20' },
+            silver: { name: 'PRO (Plata)', bg1: 'bg-gray-400', bg2: 'bg-slate-700', text: 'text-gray-300', gradient: 'from-gray-300 to-slate-400', border: 'border-gray-400', shadow: 'shadow-gray-500/20' }
         };
         const TOURNAMENT_PHASES = ["Fase de Grupos", "Dieciseisavos", "Octavos", "Cuartos", "Semifinales", "Final"];
         const PLAYER_LEVELS = ["PRO", "1RA", "2DA", "3RA", "4TA", "5TA", "6TA", "7MA", "8VA", "SUMA 13"];
@@ -124,6 +128,7 @@
             category: 'MASCULINO',
             playerLevel: '1RA',
             theme: 'pink',
+            tournamentName: 'MASTER',
             tournamentLogo: '', 
             tournamentPhase: 'Final', 
             courtName: 'PISTA CENTRAL',
@@ -340,14 +345,16 @@
 
             const handleLogout = () => {
                 setAuthMode('login');
-                setPinInput('');
+                setPinInput(''); // Borra el PIN visualmente
                 setActivePin(null);
                 setActiveSpectatorId(null);
                 setIsPublicMode(false);
                 setShowControls(false);
+                // Limpia la URL recargando la ruta base para asegurar un reseteo total
                 window.location.href = window.location.pathname;
             };
 
+            // Escucha de Firestore: Actualiza estado y arrays separados de publicidad
             useEffect(() => {
                 if (!user || authMode !== 'scoreboard' || !activeSpectatorId) return;
                 const unsub = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', activeSpectatorId), (docSnap) => {
@@ -363,6 +370,7 @@
                 return () => unsub();
             }, [user, authMode, activeSpectatorId]);
 
+            // Motor de relojes
             useEffect(() => {
                 let intervalId = null;
                 if (authMode === 'scoreboard' && !isPublicMode && activePin && (gameState.isTimerRunning || gameState.isMatchClockRunning)) {
@@ -393,6 +401,7 @@
                 }
             }, [gameState.activeView, allFullSponsors.length]);
 
+            // pushUpdate solo escribe gameState, para no machacar los arrays de publicidad
             const pushUpdate = async (updates) => {
                 if (!activePin || isPublicMode) return;
                 const currentState = gameStateRef.current;
@@ -523,6 +532,24 @@
                 }
             };
 
+            const updateGames = (teamNum, direction) => {
+                const currentState = gameStateRef.current;
+                const teamKey = teamNum === 1 ? 'team1' : 'team2';
+                const team = currentState[teamKey];
+                let newSets = [...team.sets];
+                let newServer = currentState.server;
+
+                if (direction === 'up' && newSets[currentState.currentSet] < 7) {
+                    newSets[currentState.currentSet]++;
+                    newServer = currentState.server === 1 ? 2 : 1; // Alterna saque al ganar un game
+                }
+                if (direction === 'down' && newSets[currentState.currentSet] > 0) newSets[currentState.currentSet]--;
+                
+                const newTempState = { ...currentState, [teamKey]: { ...team, sets: newSets }, server: newServer };
+                pushUpdate(newTempState);
+                if (direction === 'up') triggerWinnerCheck(newTempState);
+            };
+
             const resetPoints = (teamNum) => {
                 const currentState = gameStateRef.current;
                 const teamKey = teamNum === 1 ? 'team1' : 'team2';
@@ -537,6 +564,28 @@
                 let newSets = [...team.sets];
                 newSets[currentState.currentSet] = 0;
                 pushUpdate({ [teamKey]: { ...team, sets: newSets } });
+            };
+
+            const winTieBreak = (teamNum) => {
+                const currentState = gameStateRef.current;
+                const teamKey = teamNum === 1 ? 'team1' : 'team2';
+                const otherTeamKey = teamNum === 1 ? 'team2' : 'team1';
+                const team = currentState[teamKey];
+                const otherTeam = currentState[otherTeamKey];
+                
+                let newSets = [...team.sets];
+                newSets[currentState.currentSet]++; 
+                
+                const newTempState = {
+                    ...currentState,
+                    [teamKey]: { ...team, sets: newSets, tbPoints: 0, points: '0' },
+                    [otherTeamKey]: { ...otherTeam, tbPoints: 0, points: '0' },
+                    isTieBreak: false, 
+                    tvAlert: '',
+                    server: currentState.server === 1 ? 2 : 1 // Alternar tras ganar set
+                };
+                pushUpdate(newTempState);
+                triggerWinnerCheck(newTempState);
             };
 
             const addTickerMessage = () => {
@@ -681,6 +730,7 @@
                 <div className="min-h-screen text-white relative flex flex-col overflow-hidden">
                     <BackgroundFX activeView={gameState.activeView} themeKey={gameState.theme} />
 
+                    {/* EL BOTÓN DE AJUSTES NUNCA DEBE APARECER EN MODO PÚBLICO */}
                     {!isPublicMode && (
                         <button onClick={() => setShowControls(true)} className={`fixed bottom-6 right-6 z-50 ${activeTheme.bg1} backdrop-blur-md p-4 rounded-full border border-white/20 shadow-xl hover:scale-110 transition-transform`}>
                             <i className="fa-solid fa-gear text-[28px]"></i>
@@ -715,11 +765,15 @@
                                         <div className="space-y-1"><label className="text-gray-400 font-bold text-[9px] uppercase">NIVEL</label><select value={gameState.playerLevel} onChange={e => pushUpdate({playerLevel: e.target.value})} className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full">{PLAYER_LEVELS.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
                                         <div className="space-y-1"><label className="text-gray-400 font-bold text-[9px] uppercase">FASE</label><select value={gameState.tournamentPhase} onChange={e => pushUpdate({tournamentPhase: e.target.value})} className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full">{TOURNAMENT_PHASES.map(f => <option key={f} value={f}>{f}</option>)}</select></div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div className="grid grid-cols-3 gap-2">
                                         <div className="space-y-1"><label className="text-gray-400 font-bold text-[9px] uppercase">TEMA</label><select value={gameState.theme} onChange={e => pushUpdate({theme: e.target.value})} className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full">{Object.entries(THEMES).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}</select></div>
                                         <div className="space-y-1">
+                                            <label className="text-gray-400 font-bold text-[9px] uppercase">NOMBRE TORNEO</label>
+                                            <input type="text" value={gameState.tournamentName || ''} onChange={e => pushUpdate({tournamentName: e.target.value.toUpperCase()})} className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full uppercase" placeholder="MASTER" />
+                                        </div>
+                                        <div className="space-y-1">
                                             <label className="text-gray-400 font-bold text-[9px] uppercase">PISTA / CANCHA</label>
-                                            <input type="text" value={gameState.courtName || ''} onChange={e => pushUpdate({courtName: e.target.value.toUpperCase()})} className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full uppercase" placeholder="PISTA CENTRAL" />
+                                            <input type="text" value={gameState.courtName || ''} onChange={e => pushUpdate({courtName: e.target.value.toUpperCase()})} className="bg-black/50 border border-white/20 text-white text-[10px] rounded p-1.5 w-full uppercase" placeholder="CENTRAL" />
                                         </div>
                                     </div>
                                     <div className="space-y-1 pt-2 border-t border-white/10">
@@ -918,7 +972,7 @@
                                     )}
                                     <div className="flex flex-col justify-center">
                                         <h1 className="text-5xl md:text-6xl font-black tracking-tighter uppercase mb-2 font-tv-header leading-none">
-                                            <span className={`bg-clip-text text-transparent bg-gradient-to-r ${activeTheme.gradient}`}>{activeTheme.name.split(' ')[0]}</span>
+                                            <span className={`bg-clip-text text-transparent bg-gradient-to-r ${activeTheme.gradient}`}>{gameState.tournamentName || 'MASTER'}</span>
                                         </h1>
                                         <p className="text-gray-300 tracking-[0.3em] font-bold text-sm uppercase bg-black/40 inline-block px-3 py-1 rounded border border-white/10">
                                             {gameState.courtName || 'PISTA CENTRAL'} <span className="mx-2 text-gray-500">•</span> {gameState.tournamentPhase}
