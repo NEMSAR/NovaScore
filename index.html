@@ -91,12 +91,12 @@
 
         // --- CONFIGURACIÓN DE FIREBASE ---
         let firebaseConfig = {
-             apiKey: "AIzaSyC3zt607wskM2ax9fxVQM7qRrsMxvepjss",
-  authDomain: "novascore-24ab5.firebaseapp.com",
-  projectId: "novascore-24ab5",
-  storageBucket: "novascore-24ab5.firebasestorage.app",
-  messagingSenderId: "504663563166",
-  appId: "1:504663563166:web:0fe795abfa02818d94948f"
+            apiKey: "AIzaSyC3zt607wskM2ax9fxVQM7qRrsMxvepjss",
+            authDomain: "novascore-24ab5.firebaseapp.com",
+            projectId: "novascore-24ab5",
+            storageBucket: "novascore-24ab5.firebasestorage.app",
+            messagingSenderId: "504663563166",
+            appId: "1:504663563166:web:0fe795abfa02818d94948f"
         };
         
         try {
@@ -129,7 +129,13 @@
             courtName: 'PISTA CENTRAL',
             team1: { p1: 'JUGADOR 1', p2: 'JUGADOR 2', sets: [0, 0, 0], points: '0', tbPoints: 0 },
             team2: { p1: 'JUGADOR 3', p2: 'JUGADOR 4', sets: [0, 0, 0], points: '0', tbPoints: 0 },
-            server: 1, currentSet: 0, isTieBreak: false, tvAlert: '',
+            server: { team: 1, player: 1 },
+            nextServerT1: 2,
+            nextServerT2: 1,
+            puntoDeOro: true,
+            tieBreakMode: 0, // 0: Normal, 1: TieBreak (7), 2: Super TieBreak (10)
+            currentSet: 0, 
+            tvAlert: '',
             timeLeft: 300, isTimerRunning: false, matchClock: 0, isMatchClockRunning: false,
             sponsors: ["TORNEO PATROCINADO POR: RED BULL", "VISITA NUESTRO BAR PARA BEBIDAS FRÍAS"],
             tournamentBanners: [], 
@@ -189,14 +195,17 @@
         };
 
         const calculateAutoAlert = (state) => {
-            const { team1, team2, currentSet, isTieBreak, tournamentPhase } = state;
+            const { team1, team2, currentSet, tieBreakMode, tournamentPhase } = state;
             const is1PtAway = (pts, oppPts, tbPts, oppTbPts) => {
-                if (isTieBreak) return tbPts >= 6 && (tbPts - oppTbPts >= 1);
-                if (pts === '40' && oppPts === '40') return true; 
+                if (tieBreakMode > 0) {
+                    const target = tieBreakMode === 2 ? 10 : 7;
+                    return tbPts >= target - 1 && (tbPts - oppTbPts >= 1);
+                }
+                if (pts === '40' && oppPts === '40' && state.puntoDeOro) return true; 
                 return (pts === '40' && oppPts !== 'Ad' && oppPts !== '40') || pts === 'Ad';
             };
             const is1GameAway = (games, oppGames) => {
-                if (isTieBreak) return true; 
+                if (tieBreakMode > 0) return true; 
                 return (games === 5 && oppGames <= 4) || (games === 6 && oppGames === 5);
             };
 
@@ -216,7 +225,7 @@
 
             if (t1MatchPt || t2MatchPt) return tournamentPhase === 'Final' ? 'TOURNAMENT POINT' : 'MATCH POINT';
             if (t1SetPt || t2SetPt) return 'SET POINT';
-            if (!isTieBreak && team1.points === '40' && team2.points === '40') return 'PUNTO DE ORO';
+            if (tieBreakMode === 0 && team1.points === '40' && team2.points === '40') return 'PUNTO DE ORO';
             return '';
         };
 
@@ -331,12 +340,11 @@
 
             const handleLogout = () => {
                 setAuthMode('login');
-                setPinInput(''); // Borra el PIN visualmente
+                setPinInput('');
                 setActivePin(null);
                 setActiveSpectatorId(null);
                 setIsPublicMode(false);
                 setShowControls(false);
-                // Limpia la URL recargando la ruta base para asegurar un reseteo total
                 window.location.href = window.location.pathname;
             };
 
@@ -345,7 +353,9 @@
                 const unsub = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'scoreboards', activeSpectatorId), (docSnap) => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
-                        setGameState(data.gameState);
+                        const fixedState = { ...DEFAULT_GAME_STATE, ...data.gameState };
+                        if(typeof fixedState.server !== 'object') fixedState.server = { team: fixedState.server || 1, player: 1 };
+                        setGameState(fixedState);
                         setTournamentBanners(data.tournamentBanners || []);
                         setTournamentSponsors(data.tournamentSponsors || []);
                     }
@@ -388,7 +398,7 @@
                 const currentState = gameStateRef.current;
                 const tempState = { ...currentState, ...updates };
                 
-                if (updates.team1 || updates.team2 || updates.isTieBreak || updates.currentSet) {
+                if (updates.team1 || updates.team2 || updates.tieBreakMode !== undefined || updates.currentSet !== undefined) {
                     const autoAlert = calculateAutoAlert(tempState);
                     tempState.tvAlert = autoAlert; 
                 }
@@ -409,46 +419,108 @@
                 }
             };
 
-            const handlePoints = (teamNum, direction) => {
-                const currentState = gameStateRef.current;
-                const teamKey = teamNum === 1 ? 'team1' : 'team2';
-                const team = currentState[teamKey];
-                let newServer = currentState.server;
+            // LOGICA DE ALTERNANCIA DE SAQUE
+            const advanceServer = (currentState) => {
+                const currentSrvTeam = currentState.server?.team || 1;
+                const currentSrvPlayer = currentState.server?.player || 1;
+                
+                const newSrvTeam = currentSrvTeam === 1 ? 2 : 1;
+                const newSrvPlayer = newSrvTeam === 1 ? (currentState.nextServerT1 || 1) : (currentState.nextServerT2 || 1);
 
-                if (currentState.isTieBreak) {
-                    let newTb = team.tbPoints;
-                    if (direction === 'up') {
-                        newTb++;
-                        const totalTbPoints = newTb + currentState[teamNum === 1 ? 'team2' : 'team1'].tbPoints;
-                        if (totalTbPoints % 2 !== 0) newServer = currentState.server === 1 ? 2 : 1;
-                    }
-                    if (direction === 'down' && newTb > 0) newTb--;
-                    pushUpdate({ [teamKey]: { ...team, tbPoints: newTb }, server: newServer });
-                } else {
-                    const curr = POINTS.indexOf(team.points);
-                    let nIdx = curr;
-                    if (direction === 'up' && curr < POINTS.length - 1) nIdx++;
-                    if (direction === 'down' && curr > 0) nIdx--;
-                    pushUpdate({ [teamKey]: { ...team, points: POINTS[nIdx] } });
-                }
+                const nextUpdates = {};
+                if (currentSrvTeam === 1) nextUpdates.nextServerT1 = currentSrvPlayer === 1 ? 2 : 1;
+                else nextUpdates.nextServerT2 = currentSrvPlayer === 1 ? 2 : 1;
+
+                return { server: { team: newSrvTeam, player: newSrvPlayer }, ...nextUpdates };
             };
 
-            const updateGames = (teamNum, direction) => {
+            const autoWinGame = (teamNum, direction = 'up') => {
                 const currentState = gameStateRef.current;
                 const teamKey = teamNum === 1 ? 'team1' : 'team2';
                 const team = currentState[teamKey];
                 let newSets = [...team.sets];
-                let newServer = currentState.server;
 
                 if (direction === 'up' && newSets[currentState.currentSet] < 7) {
                     newSets[currentState.currentSet]++;
-                    newServer = currentState.server === 1 ? 2 : 1; 
+                } else if (direction === 'down' && newSets[currentState.currentSet] > 0) {
+                    newSets[currentState.currentSet]--;
                 }
-                if (direction === 'down' && newSets[currentState.currentSet] > 0) newSets[currentState.currentSet]--;
-                
-                const newTempState = { ...currentState, [teamKey]: { ...team, sets: newSets }, server: newServer };
+
+                let srvUpdates = {};
+                if (direction === 'up') srvUpdates = advanceServer(currentState);
+
+                const newTempState = {
+                    ...currentState,
+                    [teamKey]: { ...team, sets: newSets, points: '0', tbPoints: 0 },
+                    [teamNum === 1 ? 'team2' : 'team1']: { ...currentState[teamNum === 1 ? 'team2' : 'team1'], points: '0', tbPoints: 0 },
+                    ...srvUpdates
+                };
+
                 pushUpdate(newTempState);
                 if (direction === 'up') triggerWinnerCheck(newTempState);
+            };
+
+            const handlePoints = (teamNum, direction) => {
+                const currentState = gameStateRef.current;
+                const teamKey = teamNum === 1 ? 'team1' : 'team2';
+                const otherTeamKey = teamNum === 1 ? 'team2' : 'team1';
+                const team = currentState[teamKey];
+                const otherTeam = currentState[otherTeamKey];
+
+                if (currentState.tieBreakMode > 0) {
+                    let newTb = team.tbPoints;
+                    let updates = {};
+
+                    if (direction === 'up') {
+                        newTb++;
+                        const target = currentState.tieBreakMode === 2 ? 10 : 7;
+                        
+                        if (newTb >= target && (newTb - otherTeam.tbPoints >= 2)) {
+                            // Gana TieBreak y Game
+                            autoWinGame(teamNum, 'up');
+                            pushUpdate({ tieBreakMode: 0, tvAlert: '' });
+                            return;
+                        }
+
+                        const totalPoints = newTb + otherTeam.tbPoints;
+                        if (totalPoints % 2 !== 0) {
+                            updates = advanceServer(currentState);
+                        }
+                    } else {
+                        if (newTb > 0) newTb--;
+                    }
+                    pushUpdate({ ...updates, [teamKey]: { ...team, tbPoints: newTb } });
+                } else {
+                    if (direction === 'up') {
+                        if (team.points === '40') {
+                            if (currentState.puntoDeOro) {
+                                autoWinGame(teamNum);
+                            } else {
+                                if (otherTeam.points === '40') {
+                                    pushUpdate({ [teamKey]: { ...team, points: 'Ad' } });
+                                } else if (otherTeam.points === 'Ad') {
+                                    pushUpdate({ [otherTeamKey]: { ...otherTeam, points: '40' } });
+                                } else {
+                                    autoWinGame(teamNum);
+                                }
+                            }
+                        } else if (team.points === 'Ad') {
+                            autoWinGame(teamNum);
+                        } else {
+                            const curr = POINTS.indexOf(team.points);
+                            pushUpdate({ [teamKey]: { ...team, points: POINTS[curr + 1] } });
+                        }
+                    } else {
+                        if (team.points === 'Ad') {
+                            pushUpdate({ [teamKey]: { ...team, points: '40' } });
+                        } else {
+                            const curr = POINTS.indexOf(team.points);
+                            if (curr > 0) {
+                                pushUpdate({ [teamKey]: { ...team, points: POINTS[curr - 1] } });
+                            }
+                        }
+                    }
+                }
             };
 
             const resetPoints = (teamNum) => {
@@ -465,28 +537,6 @@
                 let newSets = [...team.sets];
                 newSets[currentState.currentSet] = 0;
                 pushUpdate({ [teamKey]: { ...team, sets: newSets } });
-            };
-
-            const winTieBreak = (teamNum) => {
-                const currentState = gameStateRef.current;
-                const teamKey = teamNum === 1 ? 'team1' : 'team2';
-                const otherTeamKey = teamNum === 1 ? 'team2' : 'team1';
-                const team = currentState[teamKey];
-                const otherTeam = currentState[otherTeamKey];
-                
-                let newSets = [...team.sets];
-                newSets[currentState.currentSet]++; 
-                
-                const newTempState = {
-                    ...currentState,
-                    [teamKey]: { ...team, sets: newSets, tbPoints: 0, points: '0' },
-                    [otherTeamKey]: { ...otherTeam, tbPoints: 0, points: '0' },
-                    isTieBreak: false, 
-                    tvAlert: '',
-                    server: currentState.server === 1 ? 2 : 1 
-                };
-                pushUpdate(newTempState);
-                triggerWinnerCheck(newTempState);
             };
 
             const addTickerMessage = () => {
@@ -521,7 +571,7 @@
                     team1: { ...currentState.team1, sets: [0,0,0], points: '0', tbPoints: 0 },
                     team2: { ...currentState.team2, sets: [0,0,0], points: '0', tbPoints: 0 },
                     currentSet: 0,
-                    isTieBreak: false,
+                    tieBreakMode: 0,
                     tvAlert: '',
                     matchClock: 0,
                     isMatchClockRunning: false,
@@ -583,7 +633,7 @@
                                 <i className="fa-solid fa-lock text-white/80 text-[32px]"></i>
                             </div>
                             
-                            <h1 className="text-3xl font-tv-header tracking-[0.2em] uppercase mb-2 text-white">NovaBit Pro</h1>
+                            <h1 className="text-3xl font-tv-header tracking-[0.2em] uppercase mb-2 text-white">NovaScore Pro</h1>
                             <p className="text-zinc-500 text-xs tracking-[0.3em] font-tv-numbers mb-8">SISTEMA DE RETRANSMISIÓN</p>
                             
                             <form onSubmit={handleLoginSubmit} className="space-y-6 w-full">
@@ -631,7 +681,6 @@
                 <div className="min-h-screen text-white relative flex flex-col overflow-hidden">
                     <BackgroundFX activeView={gameState.activeView} themeKey={gameState.theme} />
 
-                    {/* EL BOTÓN DE AJUSTES NUNCA DEBE APARECER EN MODO PÚBLICO */}
                     {!isPublicMode && (
                         <button onClick={() => setShowControls(true)} className={`fixed bottom-6 right-6 z-50 ${activeTheme.bg1} backdrop-blur-md p-4 rounded-full border border-white/20 shadow-xl hover:scale-110 transition-transform`}>
                             <i className="fa-solid fa-gear text-[28px]"></i>
@@ -743,8 +792,15 @@
                                         <div className="flex justify-between items-center">
                                             <label className="text-gray-400 font-bold text-xs uppercase">PUNTOS Y SETS</label>
                                             <div className="flex gap-2">
-                                                <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-1 rounded border border-green-500/30 flex items-center gap-1 hidden sm:flex"><i className="fa-solid fa-robot"></i> AUTO-ALERTS</span>
-                                                <button onClick={() => pushUpdate({isTieBreak: !gameState.isTieBreak})} className={`text-xs px-3 py-1 rounded font-bold border transition-all ${gameState.isTieBreak ? 'bg-red-600 border-red-500 text-white animate-pulse' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>MODO TIE-BREAK</button>
+                                                <button onClick={() => pushUpdate({puntoDeOro: !gameState.puntoDeOro})} className={`text-[9px] px-2 py-1 rounded font-bold border transition-all ${gameState.puntoDeOro ? 'bg-yellow-500 border-yellow-400 text-black' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>
+                                                    {gameState.puntoDeOro ? 'P. ORO' : 'VENTAJA'}
+                                                </button>
+                                                <button onClick={() => {
+                                                    const nextMode = (gameState.tieBreakMode + 1) % 3;
+                                                    pushUpdate({tieBreakMode: nextMode});
+                                                }} className={`text-[9px] px-2 py-1 rounded font-bold border transition-all ${gameState.tieBreakMode > 0 ? 'bg-red-600 border-red-500 text-white animate-pulse' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>
+                                                    {gameState.tieBreakMode === 0 ? 'MODO NORMAL' : (gameState.tieBreakMode === 1 ? 'TIE-BREAK (7)' : 'SUPER TIE-BREAK (10)')}
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
@@ -754,23 +810,30 @@
                                         const team = gameState[teamKey];
                                         return (
                                             <div key={`ctrl-t${num}`} className="bg-black/40 p-3 rounded-lg border border-white/5 space-y-3 relative overflow-hidden">
-                                                {gameState.server === num && <div className="absolute top-0 left-0 w-1.5 h-full bg-yellow-400"></div>}
-                                                <div className="flex items-start gap-2 pl-3">
-                                                    <div className="flex-1 space-y-2">
+                                                {gameState.server?.team === num && <div className="absolute top-0 left-0 w-1.5 h-full bg-yellow-400"></div>}
+                                                <div className="flex flex-col gap-2 pl-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <button onClick={() => pushUpdate({server: {team: num, player: 1}, [num===1 ? 'nextServerT1' : 'nextServerT2']: 2})} className={`p-1.5 rounded transition-colors ${gameState.server?.team === num && gameState.server?.player === 1 ? 'text-yellow-400 bg-white/10' : 'text-gray-600 hover:text-gray-400'}`} title="Asignar Saque a este jugador">
+                                                            <i className="fa-solid fa-baseball text-sm"></i>
+                                                        </button>
                                                         <input type="text" value={team.p1} onChange={e => pushUpdate({ [teamKey]: { ...team, p1: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full px-3 py-2 text-xs uppercase rounded font-tv-numbers"/>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <button onClick={() => pushUpdate({server: {team: num, player: 2}, [num===1 ? 'nextServerT1' : 'nextServerT2']: 1})} className={`p-1.5 rounded transition-colors ${gameState.server?.team === num && gameState.server?.player === 2 ? 'text-yellow-400 bg-white/10' : 'text-gray-600 hover:text-gray-400'}`} title="Asignar Saque a este jugador">
+                                                            <i className="fa-solid fa-baseball text-sm"></i>
+                                                        </button>
                                                         <input type="text" value={team.p2} onChange={e => pushUpdate({ [teamKey]: { ...team, p2: e.target.value } })} className="bg-black/30 border border-white/10 text-white font-bold w-full px-3 py-2 text-xs uppercase rounded font-tv-numbers"/>
                                                     </div>
-                                                    <button onClick={() => pushUpdate({server: num})} className={`text-[10px] px-3 py-2 rounded font-bold shrink-0 h-full min-h-[72px] ${gameState.server === num ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-400'}`}><i className="fa-solid fa-baseball mb-1 block text-lg"></i>SAQUE</button>
                                                 </div>
-                                                <div className="grid grid-cols-2 gap-3 pl-3">
+                                                <div className="grid grid-cols-2 gap-3 pl-3 mt-2">
                                                     <div className="bg-white/5 p-2 rounded text-center">
                                                         <div className="flex justify-between items-center mb-1 px-1">
-                                                            <span className={`text-xs font-bold ${gameState.isTieBreak ? 'text-red-400' : 'text-gray-400'}`}>Pts ({gameState.isTieBreak ? team.tbPoints : team.points})</span>
+                                                            <span className={`text-xs font-bold ${gameState.tieBreakMode > 0 ? 'text-red-400' : 'text-gray-400'}`}>Pts ({gameState.tieBreakMode > 0 ? team.tbPoints : team.points})</span>
                                                             <button onClick={() => resetPoints(num)} className="text-gray-500 hover:text-white transition-colors py-1 px-2" title="Reiniciar Puntos"><i className="fa-solid fa-rotate-left text-[12px]"></i></button>
                                                         </div>
                                                         <div className="flex gap-1">
                                                             <button onClick={() => handlePoints(num, 'down')} className="flex-1 bg-white/10 hover:bg-white/20 py-2.5 rounded"><i className="fa-solid fa-minus text-[14px]"></i></button>
-                                                            <button onClick={() => handlePoints(num, 'up')} className="flex-1 bg-white/10 hover:bg-white/20 py-2.5 rounded"><i className="fa-solid fa-plus text-[14px]"></i></button>
+                                                            <button onClick={() => handlePoints(num, 'up')} className="flex-1 bg-emerald-600/30 hover:bg-emerald-500/50 py-2.5 rounded border border-emerald-500/30"><i className="fa-solid fa-plus text-[14px] text-emerald-400"></i></button>
                                                         </div>
                                                     </div>
                                                     <div className="bg-white/5 p-2 rounded text-center">
@@ -784,13 +847,6 @@
                                                         </div>
                                                     </div>
                                                 </div>
-                                                {gameState.isTieBreak && (
-                                                    <div className="pl-3">
-                                                        <button onClick={() => winTieBreak(num)} className="w-full mt-2 bg-red-600/80 hover:bg-red-500 text-white text-[12px] font-bold py-3 rounded transition-colors uppercase border border-red-500">
-                                                            <i className="fa-solid fa-trophy mr-1"></i> Ganó Tie-Break
-                                                        </button>
-                                                    </div>
-                                                )}
                                             </div>
                                         )
                                     })}
@@ -900,7 +956,7 @@
 
                                 <div className="grid grid-cols-[1fr_auto_auto_auto_130px] gap-1 border-b border-white/10 bg-black/60 text-gray-400 text-xs font-bold tracking-[0.2em] p-2 pr-4 text-center items-center z-20 relative font-tv-header">
                                     <div className="text-left pl-14">JUGADORES</div><div className="w-16">1</div><div className="w-16">2</div><div className="w-16">3</div>
-                                    <div className={gameState.isTieBreak ? 'text-red-500 animate-pulse' : activeTheme.text}>{gameState.isTieBreak ? 'TIE BREAK' : 'PTS'}</div>
+                                    <div className={gameState.tieBreakMode > 0 ? 'text-red-500 animate-pulse' : activeTheme.text}>{gameState.tieBreakMode > 0 ? 'TIE BREAK' : 'PTS'}</div>
                                 </div>
 
                                 {[1, 2].map(num => {
@@ -909,13 +965,17 @@
                                     
                                     return (
                                         <div key={`row-${num}`} className={`grid grid-cols-[1fr_auto_auto_auto_130px] gap-1 items-stretch group relative z-20 ${num === 1 ? 'border-b border-white/5' : ''}`}>
-                                            <div className="flex items-center px-4 py-4 gap-4 relative bg-gradient-to-r hover:from-white/5 to-transparent transition-colors">
-                                                <div className="w-6 flex justify-center items-center h-full">
-                                                    {gameState.server === num && <i className="fa-solid fa-baseball text-yellow-400 animate-pulse drop-shadow-[0_0_10px_rgba(250,204,21,0.8)] text-lg"></i>}
-                                                </div>
-                                                <div className="flex flex-col border-l-2 border-white/20 pl-4 py-1">
-                                                    <span className="text-2xl md:text-3xl font-tv-header tracking-widest uppercase text-white/90 leading-tight">{team.p1}</span>
-                                                    <span className="text-2xl md:text-3xl font-tv-header tracking-widest uppercase text-white/90 leading-tight">{team.p2}</span>
+                                            <div className="flex items-center px-4 py-4 gap-2 relative bg-gradient-to-r hover:from-white/5 to-transparent transition-colors">
+                                                
+                                                <div className="flex flex-col border-l-2 border-white/20 pl-4 py-1 space-y-1 w-full">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-2xl md:text-3xl font-tv-header tracking-widest uppercase text-white/90 leading-none">{team.p1}</span>
+                                                        {gameState.server?.team === num && gameState.server?.player === 1 && <i className="fa-solid fa-baseball text-yellow-400 animate-pulse drop-shadow-[0_0_10px_rgba(250,204,21,0.8)] text-lg"></i>}
+                                                    </div>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-2xl md:text-3xl font-tv-header tracking-widest uppercase text-white/90 leading-none">{team.p2}</span>
+                                                        {gameState.server?.team === num && gameState.server?.player === 2 && <i className="fa-solid fa-baseball text-yellow-400 animate-pulse drop-shadow-[0_0_10px_rgba(250,204,21,0.8)] text-lg"></i>}
+                                                    </div>
                                                     {/* INDICADORES DE SETS GANADOS */}
                                                     <div className="flex gap-1 mt-1.5">
                                                         {[...Array(2)].map((_, i) => (
@@ -930,12 +990,12 @@
                                                 </div>
                                             ))}
                                             
-                                            {/* CAJA DE PUNTOS (CON EFECTO PUNTO DE ORO) */}
+                                            {/* CAJA DE PUNTOS */}
                                             <div className={`flex items-center justify-center text-6xl font-tv-numbers font-black tracking-tighter m-1 rounded-sm border-2 transition-all duration-300 ${
-                                                gameState.isTieBreak ? 'bg-red-600 border-red-400 text-white shadow-[0_0_20px_rgba(220,38,38,0.3)]' : 
-                                                (isPuntoDeOro ? 'bg-yellow-500 border-yellow-300 text-black shadow-[0_0_25px_rgba(250,204,21,0.6)]' : 'bg-white border-transparent text-black')
+                                                gameState.tieBreakMode > 0 ? 'bg-red-600 border-red-400 text-white shadow-[0_0_20px_rgba(220,38,38,0.3)]' : 
+                                                (gameState.puntoDeOro && team.points === '40' && gameState[num === 1 ? 'team2' : 'team1'].points === '40' ? 'bg-yellow-500 border-yellow-300 text-black shadow-[0_0_25px_rgba(250,204,21,0.6)]' : 'bg-white border-transparent text-black')
                                             }`}>
-                                                {gameState.isTieBreak ? team.tbPoints : team.points}
+                                                {gameState.tieBreakMode > 0 ? team.tbPoints : team.points}
                                             </div>
                                         </div>
                                     );
@@ -943,7 +1003,7 @@
                             </div>
                         </div>
 
-                        {/* BANNERS SCOREBOARD FLOTANTES (Fijos en la pantalla para no ser cortados) */}
+                        {/* BANNERS SCOREBOARD FLOTANTES */}
                         {tournamentBanners && tournamentBanners.length > 0 && (
                             <div className={`fixed bottom-24 right-10 z-[100] transition-all duration-700 ${gameState.activeView === 'scoreboard' ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10 pointer-events-none'}`}>
                                 <BannerCarousel banners={tournamentBanners} className="w-[350px] h-[100px] bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)] p-2" />
